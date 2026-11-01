@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.3
+
+### Changed
+
+- Sort admin Host Activity by request rate, highest first, by default.
+- Click any Host Activity column heading to toggle ascending or descending order, retained across live refreshes. DDoS checkpoint sorting groups active or normal hosts first.
+- Rename the Domain column to Host and align search labels with host terminology.
+
 ## 0.1.2
 
 ### Added

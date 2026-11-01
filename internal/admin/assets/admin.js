@@ -4,7 +4,7 @@
   const byId = (id) => document.getElementById(id);
   const number = new Intl.NumberFormat(undefined, {maximumFractionDigits: 0});
   const rateNumber = new Intl.NumberFormat(undefined, {maximumFractionDigits: 1});
-  const state = {search: "", version: 0, previous: new Map(), previousTotal: null, previousRedis: null, timer: null, inflight: false, pending: false};
+  const state = {search: "", sort: "rps", direction: "descending", hosts: [], version: 0, previous: new Map(), previousTotal: null, previousRedis: null, timer: null, inflight: false, pending: false};
   const text = (id, value) => { byId(id).textContent = value; };
   const percent = (value) => value == null ? "—" : `${rateNumber.format(value)}%`;
   const frequency = (count, previous, key, now) => previous && now > previous.time && count >= previous[key] ? (count - previous[key]) * 1000 / (now - previous.time) : null;
@@ -63,14 +63,39 @@
     text("server-ram-detail", runtime.server_memory_used_bytes == null || runtime.server_memory_bytes == null ? "Unavailable on this OS" : `${bytes(runtime.server_memory_used_bytes)} / ${bytes(runtime.server_memory_bytes)} used`);
     renderServices(data.services, now);
     text("capacity", `${number.format(total.tracked_hosts)} / ${number.format(total.capacity)} hosts tracked · ${number.format(total.untracked_requests)} requests outside host table`);
-    const body = byId("hosts"), fragment = document.createDocumentFragment(), samples = new Map();
-    for (const host of data.hosts) {
-      const row = document.createElement("tr"), last = state.previous.get(host.hostname);
+    const samples = new Map();
+    state.hosts = data.hosts.map((host) => {
+      const last = state.previous.get(host.hostname);
       const rps = last && now > last.time && host.requests >= last.requests ? (host.requests - last.requests) * 1000 / (now - last.time) : null;
       samples.set(host.hostname, {time: now, requests: host.requests});
+      return {...host, rps};
+    });
+    state.previous = samples;
+    renderHosts();
+    text("host-count", `Showing all ${number.format(data.hosts.length)} ${state.search ? "matching " : "tracked "}hosts`);
+    text("updated", `Updated ${new Date(now).toLocaleTimeString()}`);
+    byId("error").hidden = true;
+    connection(document.hidden ? "Paused" : "Live", document.hidden ? "paused" : "");
+  }
+  function renderHosts() {
+    const body = byId("hosts"), fragment = document.createDocumentFragment();
+    const direction = state.direction === "ascending" ? 1 : -1;
+    const hosts = [...state.hosts].sort((a, b) => {
+      const left = a[state.sort], right = b[state.sort];
+      // Hosts without a rate sample stay last in either direction.
+      if (left == null && right != null) return 1;
+      if (right == null && left != null) return -1;
+      const comparison = state.sort === "hostname" ? left.localeCompare(right) : Number(left) - Number(right);
+      return comparison * direction || a.hostname.localeCompare(b.hostname);
+    });
+    for (const button of document.querySelectorAll("[data-host-sort]")) {
+      button.parentElement.setAttribute("aria-sort", button.dataset.hostSort === state.sort ? state.direction : "none");
+    }
+    for (const host of hosts) {
+      const row = document.createElement("tr");
       cell(row, host.hostname, host.hostname);
       cell(row, number.format(host.requests));
-      cell(row, rps === null ? "—" : rateNumber.format(rps));
+      cell(row, host.rps === null ? "—" : rateNumber.format(host.rps));
       cell(row, number.format(host.inflight));
       cell(row, number.format(host.rejected));
       cell(row, number.format(host.errors_5xx));
@@ -81,16 +106,11 @@
       status.appendChild(badge);
       fragment.appendChild(row);
     }
-    if (!data.hosts.length) {
-      const row = document.createElement("tr"), empty = cell(row, state.search ? "No domains match your search." : "No host traffic recorded yet.");
+    if (!hosts.length) {
+      const row = document.createElement("tr"), empty = cell(row, state.search ? "No hosts match your search." : "No host traffic recorded yet.");
       empty.colSpan = 7; empty.className = "empty"; fragment.appendChild(row);
     }
     body.replaceChildren(fragment);
-    state.previous = samples;
-    text("host-count", `Showing all ${number.format(data.hosts.length)} ${state.search ? "matching " : "tracked "}hosts`);
-    text("updated", `Updated ${new Date(now).toLocaleTimeString()}`);
-    byId("error").hidden = true;
-    connection(document.hidden ? "Paused" : "Live", document.hidden ? "paused" : "");
   }
   function renderServices(services, now) {
     const redis = services.redis, database = services.maxmind;
@@ -144,6 +164,14 @@
     }
   }
   let searchTimer;
+  for (const button of document.querySelectorAll("[data-host-sort]")) {
+    button.addEventListener("click", () => {
+      const sort = button.dataset.hostSort;
+      state.direction = sort === state.sort ? (state.direction === "ascending" ? "descending" : "ascending") : sort === "hostname" ? "ascending" : "descending";
+      state.sort = sort;
+      renderHosts();
+    });
+  }
   byId("search").addEventListener("input", (event) => {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => { state.search = event.target.value; state.version++; state.previous.clear(); poll(); }, 250);
