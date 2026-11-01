@@ -1,6 +1,6 @@
 # http-proxy-firewall
 
-Version **0.1** · [Changelog](CHANGELOG.md) · [MIT license](LICENSE)
+Version **0.1.2** · [Changelog](CHANGELOG.md) · [MIT license](LICENSE)
 
 A Layer 7 firewall using **Uber Fx 1.24** for dependency injection and lifecycle management, **Fiber 3.6** for HTTP handling, and a pooled native fasthttp upstream client. Requires **Go 1.27 or newer**.
 
@@ -76,7 +76,7 @@ These frontend checks are defense in depth. They do not replace patched PHP work
 
 `PF_ADMIN_URI=__pf/__admin` selects the admin URL. For example, `PF_ADMIN_URI=ops/control` serves the page at `/ops/control`; assets and API polling automatically use that prefix. The configured subtree stays authenticated, and changing the URI removes the default admin route. Root paths, traversal segments and unsafe URL characters are rejected.
 
-Set `PF_ADMIN_CREDS_FILE=.creds` to enable `/__pf/__admin` on the HTTP/HTTPS listener. The file contains one `user:password` line and is read once at startup; the first colon separates the username, so passwords may contain additional colons. Relative paths resolve from the working directory (`/etc/proxy-firewall` under systemd). A configured missing, empty or malformed file fails startup without logging its contents. With no credentials file configured the route returns 404. `.creds.example` contains `admin:serveradmin`; replace the example credentials before deployment and use HTTPS for Basic authentication. `PF_ADMIN_ENABLED=false` explicitly disables the interface. Restart after changing credentials.
+Set `PF_ADMIN_CREDS_FILE=.creds` to enable `/__pf/__admin` on the HTTP/HTTPS listener. The file supports multiple accounts, with one `user:password` entry per line, and is read once at startup. Blank lines are ignored, LF and CRLF line endings are supported, and the first colon separates the username so passwords retain spaces and additional colons. All accounts have the same admin access. Files are limited to 4 KiB; missing, empty or malformed files, duplicate usernames, and entries exceeding the authentication header limit fail startup without logging credentials. Relative paths resolve from the working directory (`/etc/proxy-firewall` under systemd). With no credentials file configured the route returns 404. `.creds.example` contains `admin:serveradmin`; replace the example credentials before deployment and use HTTPS for Basic authentication. `PF_ADMIN_ENABLED=false` explicitly disables the interface. Restart after changing credentials. Matching credentials for every configured account are removed before forwarding backend requests, even when the interface is disabled.
 
 Use different credentials for the admin page and backend services. Authorization values matching the configured admin pair are removed from nonadmin requests before proxying, including when the page is explicitly disabled, so browser-cached admin credentials cannot reach a backend. Unrelated backend authorization values are preserved.
 

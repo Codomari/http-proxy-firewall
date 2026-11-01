@@ -21,7 +21,8 @@ import (
 
 func adminConfig(upstream string) config.Config {
 	cfg := serverConfig(upstream)
-	cfg.Admin.Enabled, cfg.Admin.User, cfg.Admin.Password, cfg.Admin.MaxHosts = true, "operator", "integration-test-password", 64
+	cfg.Admin.Enabled, cfg.Admin.MaxHosts = true, 64
+	cfg.Admin.Accounts = []config.AdminAccount{{User: "operator", Password: "integration-test-password"}}
 	return cfg
 }
 
@@ -37,7 +38,7 @@ func startAdminTestServer(t *testing.T, cfg config.Config) *Server {
 func readOverview(t *testing.T, s *Server) (monitoring.TotalsSnapshot, []monitoring.HostSnapshot) {
 	t.Helper()
 	request, _ := http.NewRequest(http.MethodGet, "http://"+s.HTTPAddress().String()+admin.BasePath+"/api/overview", nil)
-	request.SetBasicAuth(s.cfg.Admin.User, s.cfg.Admin.Password)
+	request.SetBasicAuth(s.cfg.Admin.Accounts[0].User, s.cfg.Admin.Accounts[0].Password)
 	response, err := (&http.Client{Timeout: time.Second}).Do(request)
 	if err != nil {
 		t.Fatal(err)

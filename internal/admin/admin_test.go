@@ -9,6 +9,8 @@ import (
 	"mime"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -33,7 +35,7 @@ func (p testPenalties) DDoSState(host string) (bool, time.Time) {
 func adminTestApp(t *testing.T, enabled bool) (*fiber.App, *monitoring.Registry) {
 	t.Helper()
 	cfg := config.Defaults()
-	cfg.Admin = config.Admin{Enabled: enabled, User: "test-admin", Password: "test-password:with-colon", MaxHosts: 2000}
+	cfg.Admin = config.Admin{Enabled: enabled, Accounts: []config.AdminAccount{{User: "test-admin", Password: "test-password:with-colon"}}, MaxHosts: 2000}
 	registry := monitoring.New(cfg)
 	h, err := New(cfg, registry, testPenalties{until: time.Now().Add(time.Minute)}, nil)
 	if err != nil {
@@ -64,6 +66,51 @@ func basic(user, password string) string {
 	return "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+password))
 }
 func validBasic() string { return basic("test-admin", "test-password:with-colon") }
+
+func TestMultipleAccountsFromCredentialsFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".creds")
+	if err := os.WriteFile(path, []byte("test-admin:test-password:with-colon\r\n\r\noperator: second:password \r\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Parse(nil, map[string]string{"PF_ADMIN_CREDS_FILE": path}, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := New(cfg, monitoring.New(cfg), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := fiber.New()
+	h.Mount(app)
+	app.Use(func(c fiber.Ctx) error { return c.SendString(c.Get("Authorization")) })
+	for _, auth := range []string{validBasic(), basic("operator", " second:password ")} {
+		for _, suffix := range []string{"", "/assets/admin.js", "/api/overview", "/api/hosts", "/api/runtime"} {
+			resp := request(t, app, http.MethodGet, BasePath+suffix, auth)
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("configured account rejected for %s: status=%d", suffix, resp.StatusCode)
+			}
+			body, _ := io.ReadAll(resp.Body)
+			if strings.Contains(string(body), "test-password") || strings.Contains(string(body), "second:password") {
+				t.Fatal("admin response exposed credentials")
+			}
+		}
+		resp := request(t, app, http.MethodGet, "/normal", auth)
+		body, _ := io.ReadAll(resp.Body)
+		if len(body) != 0 {
+			t.Fatal("configured admin credentials reached the backend route")
+		}
+	}
+	for _, auth := range []string{basic("test-admin", " second:password "), basic("operator", "test-password:with-colon"), basic("unknown", " second:password "), basic("operator", "wrong"), basic("", "")} {
+		if resp := request(t, app, http.MethodGet, BasePath, auth); resp.StatusCode != http.StatusUnauthorized {
+			t.Fatal("invalid or mixed-account credentials authenticated")
+		}
+		resp := request(t, app, http.MethodGet, "/normal", auth)
+		body, _ := io.ReadAll(resp.Body)
+		if string(body) != auth {
+			t.Fatal("unrelated backend credentials were stripped")
+		}
+	}
+}
 
 func TestEveryAdminResourceRequiresAuthAndSecurityHeaders(t *testing.T) {
 	app, registry := adminTestApp(t, true)
@@ -234,7 +281,7 @@ func (s testDatabaseStatus) DatabaseStatus() intelligence.DatabaseSnapshot { ret
 
 func TestOverviewIncludesStorageAndDatabaseStatus(t *testing.T) {
 	cfg := config.Defaults()
-	cfg.Admin = config.Admin{Enabled: true, User: "test-admin", Password: "test-password:with-colon"}
+	cfg.Admin = config.Admin{Enabled: true, Accounts: []config.AdminAccount{{User: "test-admin", Password: "test-password:with-colon"}}}
 	cfg.Redis.Password, cfg.Intelligence.MaxMindLicenseKey = "private-redis-password", "private-maxmind-key"
 	modified := time.Date(2026, 10, 31, 12, 30, 0, 0, time.UTC)
 	sources := ServiceSources{
@@ -269,7 +316,7 @@ func TestOverviewIncludesStorageAndDatabaseStatus(t *testing.T) {
 func TestOnlyConfiguredAdminAuthorizationIsRemovedFromBackendRoutes(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
 		cfg := config.Defaults()
-		cfg.Admin = config.Admin{Enabled: enabled, User: "test-admin", Password: "test-password:with-colon"}
+		cfg.Admin = config.Admin{Enabled: enabled, Accounts: []config.AdminAccount{{User: "test-admin", Password: "test-password:with-colon"}, {User: "operator", Password: "second-password"}}}
 		h, err := New(cfg, monitoring.New(cfg), nil, nil)
 		if err != nil {
 			t.Fatal(err)
@@ -287,6 +334,8 @@ func TestOnlyConfiguredAdminAuthorizationIsRemovedFromBackendRoutes(t *testing.T
 		backend := basic("test-admin", "different-backend-password")
 		for _, testcase := range []struct{ values, want []string }{
 			{[]string{validBasic()}, []string{}},
+			{[]string{basic("operator", "second-password")}, []string{}},
+			{[]string{validBasic(), "Bearer backend-token", basic("operator", "second-password"), backend}, []string{"Bearer backend-token", backend}},
 			{[]string{"Bearer backend-token", validBasic(), backend, "Bearer backend-token", validBasic()}, []string{"Bearer backend-token", backend, "Bearer backend-token"}},
 			{[]string{backend, backend}, []string{backend, backend}},
 		} {
@@ -328,7 +377,7 @@ func TestMatchingAdminCredentialsNeverReachActualProxyUpstream(t *testing.T) {
 	defer upstream.Close()
 	cfg := config.Defaults()
 	cfg.Proxy.Upstream, cfg.Proxy.IPv4Redirect = upstream.URL, ""
-	cfg.Admin = config.Admin{Enabled: false, User: "test-admin", Password: "test-password:with-colon"}
+	cfg.Admin = config.Admin{Enabled: false, Accounts: []config.AdminAccount{{User: "test-admin", Password: "test-password:with-colon"}, {User: "operator", Password: "second-password"}}}
 	h, err := New(cfg, nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -342,7 +391,7 @@ func TestMatchingAdminCredentialsNeverReachActualProxyUpstream(t *testing.T) {
 	h.Mount(app)
 	app.Use(forward.Handle)
 	req := httptest.NewRequest(http.MethodGet, "http://service.example/__pf/sibling", nil)
-	for _, value := range []string{"Bearer backend-token", validBasic(), "Bearer backend-token", validBasic()} {
+	for _, value := range []string{"Bearer backend-token", validBasic(), "Bearer backend-token", basic("operator", "second-password")} {
 		req.Header.Add("Authorization", value)
 	}
 	resp, err := app.Test(req)

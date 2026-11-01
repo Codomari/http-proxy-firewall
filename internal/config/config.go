@@ -165,12 +165,12 @@ func (r *environment) applyAdmin(settings *Admin) {
 	settings.Enabled = r.boolean("PF_ADMIN_ENABLED", settings.CredentialsFile != "")
 	settings.MaxHosts = r.integer("PF_ADMIN_MAX_HOSTS", settings.MaxHosts)
 	if settings.CredentialsFile != "" {
-		user, password, err := readAdminCredentials(settings.CredentialsFile)
+		accounts, err := readAdminCredentials(settings.CredentialsFile)
 		if err != nil {
 			r.errs = append(r.errs, err)
 			return
 		}
-		settings.User, settings.Password = user, password
+		settings.Accounts = accounts
 	}
 }
 
@@ -245,9 +245,16 @@ func (c Config) Validate() error {
 	check(c.Firewall.MaxBodyBytes > 0 && c.Firewall.MaxBodyBytes < int64(math.MaxInt), "max-body-bytes must fit a positive int with room for overflow probe")
 	check(c.Firewall.MaxBufferedBytes > c.Firewall.MaxBodyBytes, "max-buffered-bytes must exceed max-body-bytes")
 	check(c.Firewall.CacheCapacity > 0, "cache capacity must be positive")
-	check(!c.Admin.Enabled || (c.Admin.User != "" && c.Admin.Password != ""), "admin requires a PF_ADMIN_CREDS_FILE containing user:password")
-	check(!strings.ContainsAny(c.Admin.User, ":\r\n") && !strings.ContainsAny(c.Admin.Password, "\r\n"), "admin credentials contain unsupported characters")
-	check(len(c.Admin.User)+len(c.Admin.Password)+1 <= 3000, "admin credentials exceed the authentication header limit")
+	check(!c.Admin.Enabled || len(c.Admin.Accounts) > 0, "admin requires a PF_ADMIN_CREDS_FILE containing user:password accounts")
+	users := make(map[string]struct{}, len(c.Admin.Accounts))
+	for _, account := range c.Admin.Accounts {
+		check(account.User != "" && account.Password != "", "admin accounts require both user and password")
+		check(!strings.ContainsAny(account.User, ":\r\n\x00") && !strings.ContainsAny(account.Password, "\r\n\x00"), "admin credentials contain unsupported characters")
+		check(len(account.User)+len(account.Password)+1 <= 3000, "admin credentials exceed the authentication header limit")
+		_, duplicate := users[account.User]
+		check(!duplicate, "admin account usernames must be unique")
+		users[account.User] = struct{}{}
+	}
 	check(c.Admin.MaxHosts > 0 && c.Admin.MaxHosts <= 1000000, "PF_ADMIN_MAX_HOSTS must be between 1 and 1000000")
 	check(c.Firewall.RequestThreshold > 0, "request threshold must be positive")
 	check(c.Firewall.RejectionLogInterval >= 0, "rejection log interval cannot be negative")

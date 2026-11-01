@@ -14,7 +14,7 @@ import (
 
 func TestCustomAdminURIProtectsRoutesAndRewritesAssets(t *testing.T) {
 	cfg := config.Defaults()
-	cfg.Admin = config.Admin{Enabled: true, URI: "ops/control", User: "test-admin", Password: "test-password:with-colon"}
+	cfg.Admin = config.Admin{Enabled: true, URI: "ops/control", Accounts: []config.AdminAccount{{User: "test-admin", Password: "test-password:with-colon"}}}
 	registry := monitoring.New(cfg)
 	handler, err := New(cfg, registry, nil, nil)
 	if err != nil {

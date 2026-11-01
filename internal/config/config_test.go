@@ -98,17 +98,26 @@ func TestAdminCredentialsAndBounds(t *testing.T) {
 	}
 	write("operator:private-value\n")
 	c, err := Parse(nil, map[string]string{"PF_ADMIN_CREDS_FILE": path, "PF_ADMIN_MAX_HOSTS": "128"}, io.Discard)
-	if err != nil || !c.Admin.Enabled || c.Admin.MaxHosts != 128 || c.Admin.User != "operator" || c.Admin.Password != "private-value" {
+	if err != nil || !c.Admin.Enabled || c.Admin.MaxHosts != 128 || len(c.Admin.Accounts) != 1 || c.Admin.Accounts[0].User != "operator" || c.Admin.Accounts[0].Password != "private-value" {
 		t.Fatal("admin credentials file configuration failed")
 	}
 	write("operator: spaced:password \r\n")
 	c, err = Parse(nil, map[string]string{"PF_ADMIN_CREDS_FILE": path}, io.Discard)
-	if err != nil || c.Admin.Password != " spaced:password " {
+	if err != nil || len(c.Admin.Accounts) != 1 || c.Admin.Accounts[0].Password != " spaced:password " {
 		t.Fatal("admin password bytes changed during parsing")
 	}
 	c, err = Parse(nil, map[string]string{"PF_ADMIN_CREDS_FILE": path, "PF_ADMIN_ENABLED": "false"}, io.Discard)
-	if err != nil || c.Admin.Enabled || c.Admin.User != "operator" {
+	if err != nil || c.Admin.Enabled || len(c.Admin.Accounts) != 1 || c.Admin.Accounts[0].User != "operator" {
 		t.Fatal("admin disable override lost credentials needed for stripping")
+	}
+	write("operator:private-value\r\n\r\nsecond: spaced:password \r\n\n")
+	c, err = Parse(nil, map[string]string{"PF_ADMIN_CREDS_FILE": path}, io.Discard)
+	if err != nil || len(c.Admin.Accounts) != 2 || c.Admin.Accounts[0].User != "operator" || c.Admin.Accounts[0].Password != "private-value" || c.Admin.Accounts[1].User != "second" || c.Admin.Accounts[1].Password != " spaced:password " {
+		t.Fatal("multiple credentials with blank lines or CRLF were not preserved")
+	}
+	c, err = Parse(nil, map[string]string{"PF_ADMIN_CREDS_FILE": path, "PF_ADMIN_ENABLED": "false"}, io.Discard)
+	if err != nil || c.Admin.Enabled || len(c.Admin.Accounts) != 2 {
+		t.Fatal("disabled admin must retain all accounts for credential stripping")
 	}
 	for _, values := range []map[string]string{
 		{"PF_ADMIN_CREDS_FILE": filepath.Join(t.TempDir(), "missing")},
@@ -121,7 +130,7 @@ func TestAdminCredentialsAndBounds(t *testing.T) {
 			t.Fatal("invalid admin configuration accepted or credential exposed")
 		}
 	}
-	for _, invalid := range []string{"", "operator", ":private-value", "operator:", "operator:private-value\nsecond:line", "operator:private-value\n\n", "operator:private-value\x00", "operator:" + strings.Repeat("private-value", 500)} {
+	for _, invalid := range []string{"", "operator", ":private-value", "operator:", "operator:private-value\nsecond", "operator:private-value\noperator:duplicate", "\r\n\n", "operator:private-value\x00", "operator:private-value\nsecond:\x00invalid", "operator:" + strings.Repeat("x", 3000), "operator:" + strings.Repeat("private-value", 500)} {
 		write(invalid)
 		_, err := Parse(nil, map[string]string{"PF_ADMIN_CREDS_FILE": path}, io.Discard)
 		if err == nil || strings.Contains(err.Error(), "private-value") {
@@ -136,23 +145,23 @@ func TestAdminCredentialsAndBounds(t *testing.T) {
 
 func TestLoadReadsRelativeCredentialsOnceAtStartup(t *testing.T) {
 	t.Chdir(t.TempDir())
-	for name, content := range map[string]string{".env": "PF_ADMIN_CREDS_FILE=.creds\n", ".creds": "operator:first:password\n"} {
+	for name, content := range map[string]string{".env": "PF_ADMIN_CREDS_FILE=.creds\n", ".creds": "operator:first:password\nsecond:other-password\n"} {
 		if err := os.WriteFile(name, []byte(content), 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
 	c, err := Load(nil, io.Discard)
-	if err != nil || !c.Admin.Enabled || c.Admin.User != "operator" || c.Admin.Password != "first:password" {
+	if err != nil || !c.Admin.Enabled || len(c.Admin.Accounts) != 2 || c.Admin.Accounts[0].User != "operator" || c.Admin.Accounts[0].Password != "first:password" || c.Admin.Accounts[1].User != "second" {
 		t.Fatal("relative credentials file was not read at startup")
 	}
 	if err := os.WriteFile(".creds", []byte("operator:second-password\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if c.Admin.Password != "first:password" {
+	if len(c.Admin.Accounts) != 2 || c.Admin.Accounts[0].Password != "first:password" {
 		t.Fatal("startup credentials changed without reloading")
 	}
 	next, err := Load(nil, io.Discard)
-	if err != nil || next.Admin.Password != "second-password" {
+	if err != nil || len(next.Admin.Accounts) != 1 || next.Admin.Accounts[0].Password != "second-password" {
 		t.Fatal("next startup did not read updated credentials")
 	}
 }

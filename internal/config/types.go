@@ -89,7 +89,11 @@ type Admin struct {
 	URI             string
 	CredentialsFile string
 	Enabled         bool
-	User            string
-	Password        string
+	Accounts        []AdminAccount
 	MaxHosts        int
+}
+
+type AdminAccount struct {
+	User     string
+	Password string
 }

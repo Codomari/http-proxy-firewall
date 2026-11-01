@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.2
+
+### Added
+
+- Multiple admin accounts through `PF_ADMIN_CREDS_FILE`, with one `user:password` entry per line and blank lines allowed between accounts.
+- Authentication and upstream credential stripping for every configured account, including when the admin interface is disabled.
+- GitHub bug report, feature request, usage question and pull request templates with reproduction, validation and private security-reporting guidance.
+
+## 0.1.1
+
+### Changed
+
+- Set the HTTP `Server` header to `pf` for proxied responses, admin routes, errors and protocol upgrades.
+
 ## 0.1
 
 ### HTTP proxy and routing
@@ -10,7 +24,7 @@
 - HTTP and HTTPS keep-alive, streamed responses, server-sent events and protocol upgrade tunnels.
 - Removal of hop-by-hop headers and generation of verified forwarding headers.
 - Configurable redirect for IPv4 Host requests.
-- Consistent `Server: pf` responses, including errors, admin assets and upgrades.
+- Consistent `Server: pf-v2` responses, including errors, admin assets and upgrades.
 - Bounded upstream pools, timeout handling and explicit overload responses.
 
 ### TLS and certificates

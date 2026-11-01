@@ -104,7 +104,7 @@ func TestApplicationServesEmbeddedAdminAndTracksProxyOnly(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("origin")) }))
 	t.Cleanup(upstream.Close)
 	address := startApplication(t, upstream.URL, func(cfg *config.Config) {
-		cfg.Admin = config.Admin{Enabled: true, User: "operator", Password: "test-password", MaxHosts: 32}
+		cfg.Admin = config.Admin{Enabled: true, Accounts: []config.AdminAccount{{User: "operator", Password: "test-password"}}, MaxHosts: 32}
 	})
 	client := &http.Client{Timeout: 5 * time.Second}
 	request, _ := http.NewRequest(http.MethodGet, address+"/index.css", nil)

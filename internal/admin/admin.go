@@ -43,15 +43,18 @@ type serviceSnapshot struct {
 	MaxMind intelligence.DatabaseSnapshot `json:"maxmind"`
 }
 
+type credentialHashes struct {
+	user, password [sha256.Size]byte
+}
+
 type Handler struct {
-	basePath               string
-	enabled                bool
-	credentialsConfigured  bool
-	userHash, passwordHash [sha256.Size]byte
-	registry               *monitoring.Registry
-	penalties              PenaltySource
-	services               ServiceSources
-	assets                 map[string][]byte
+	basePath  string
+	enabled   bool
+	accounts  []credentialHashes
+	registry  *monitoring.Registry
+	penalties PenaltySource
+	services  ServiceSources
+	assets    map[string][]byte
 }
 
 func New(cfg config.Config, registry *monitoring.Registry, penalties PenaltySource, logger *slog.Logger, services ...ServiceSources) (*Handler, error) {
@@ -59,14 +62,19 @@ func New(cfg config.Config, registry *monitoring.Registry, penalties PenaltySour
 	if err != nil {
 		return nil, err
 	}
-	if cfg.Admin.Enabled && (cfg.Admin.User == "" || cfg.Admin.Password == "") {
-		return nil, errors.New("enabled admin requires both credentials")
+	if cfg.Admin.Enabled && len(cfg.Admin.Accounts) == 0 {
+		return nil, errors.New("enabled admin requires at least one account")
 	}
 	if cfg.Admin.Enabled && registry == nil {
 		return nil, errors.New("enabled admin requires a monitoring registry")
 	}
-	h := &Handler{basePath: basePath, enabled: cfg.Admin.Enabled, credentialsConfigured: cfg.Admin.User != "" && cfg.Admin.Password != "", registry: registry, penalties: penalties,
-		userHash: sha256.Sum256([]byte(cfg.Admin.User)), passwordHash: sha256.Sum256([]byte(cfg.Admin.Password)), assets: make(map[string][]byte, 4)}
+	h := &Handler{basePath: basePath, enabled: cfg.Admin.Enabled, registry: registry, penalties: penalties, assets: make(map[string][]byte, 4)}
+	for _, account := range cfg.Admin.Accounts {
+		if account.User == "" || account.Password == "" {
+			return nil, errors.New("admin accounts require both user and password")
+		}
+		h.accounts = append(h.accounts, credentialHashes{user: sha256.Sum256([]byte(account.User)), password: sha256.Sum256([]byte(account.Password))})
+	}
 	if len(services) > 0 {
 		h.services = services[0]
 	}
@@ -94,10 +102,10 @@ func (h *Handler) Mount(app *fiber.App) {
 }
 
 // A browser can reuse cached Basic credentials on neighboring paths. Remove
-// exactly our configured pair before forwarding, including after disabling the
+// our configured pairs before forwarding, including after disabling the
 // dashboard, while preserving every unrelated backend Authorization value.
 func (h *Handler) stripAdminCredentials(c fiber.Ctx) {
-	if !h.credentialsConfigured {
+	if len(h.accounts) == 0 {
 		return
 	}
 	header := &c.Request().Header
@@ -220,7 +228,11 @@ func (h *Handler) authorized(header string) bool {
 		return false
 	}
 	userHash, passwordHash := sha256.Sum256(user), sha256.Sum256(password)
-	return subtle.ConstantTimeCompare(userHash[:], h.userHash[:])&subtle.ConstantTimeCompare(passwordHash[:], h.passwordHash[:]) == 1
+	matched := 0
+	for _, account := range h.accounts {
+		matched |= subtle.ConstantTimeCompare(userHash[:], account.user[:]) & subtle.ConstantTimeCompare(passwordHash[:], account.password[:])
+	}
+	return matched == 1
 }
 
 type hostRow struct {

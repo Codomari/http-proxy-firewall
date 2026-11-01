@@ -22,7 +22,7 @@ func TestServerHeaderForProxyAdminAndRejections(t *testing.T) {
 	}))
 	defer upstream.Close()
 	cfg := serverConfig(upstream.URL)
-	cfg.Admin = config.Admin{Enabled: true, User: "operator", Password: "test-password", MaxHosts: 10}
+	cfg.Admin = config.Admin{Enabled: true, Accounts: []config.AdminAccount{{User: "operator", Password: "test-password"}}, MaxHosts: 10}
 	cfg.Observability.Metrics = true
 	s := newServerForTest(t, cfg, true)
 	if err := s.Start(context.Background()); err != nil {
