@@ -1,0 +1,72 @@
+name: proxy-firewall-local
+
+services:
+  backend:
+    image: nginx:alpine
+    mem_limit: 128m
+    cpus: 0.5
+    networks: [preview]
+
+  cert-init:
+    image: http-proxy-firewall-demo-tools:local
+    build:
+      context: .
+      dockerfile: bench/Dockerfile
+    command: ["cert", "--cert", "/certs/server.crt", "--key", "/certs/server.key", "--key-mode", "0644", "--reuse"]
+    volumes: ["certificates:/certs"]
+    networks: [preview]
+    restart: "no"
+
+  firewall:
+    image: http-proxy-firewall:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      backend: {condition: service_started}
+      cert-init: {condition: service_completed_successfully}
+    environment:
+      GOMAXPROCS: "2"
+      PF_LISTEN: 0.0.0.0:8080
+      PF_TLS_LISTEN: 0.0.0.0:8443
+      PF_TLS_ENABLED: "true"
+      PF_TLS_CERT_FILE: /certs/server.crt
+      PF_TLS_KEY_FILE: /certs/server.key
+      PF_TLS_HOSTS: localhost
+      PF_PROXY_TO: http://backend:80
+      PF_IPV4_REDIRECT: ""
+      PF_ADMIN_CREDS_FILE: /app/.creds
+      PF_ADMIN_MAX_HOSTS: "10000"
+      PF_METRICS: "true"
+      PF_PPROF_ADDRESS: ""
+      PF_SILENT: "true"
+      PF_ENABLE_REDIS: "false"
+      MAXMIND_LICENSE_KEY: ""
+      MAXMIND_DATABASE_PATH: /nonexistent/geo.mmdb
+      PF_GOOGLE_RANGES_URL: ""
+      IP_FILTER_WHITELIST: ""
+      IP_FILTER_WHITELIST_NETWORKS: ""
+      IP_FILTER_ALLOWED_COUNTRIES: ""
+      PF_TRUSTED_PROXIES: ""
+      PF_TRUST_CLOUDFLARE_HEADER: "false"
+      DOS_DETECTOR_HOSTNAME_REQUEST_THRESHOLD: "10"
+      DOS_DETECTOR_HOSTNAME_PENALTY_LIFETIME: 2m
+      PF_MAX_CONNECTIONS: "2048"
+      PF_MAX_CONCURRENT_REQUESTS: "256"
+      PF_UPSTREAM_MAX_CONNECTIONS: "256"
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8443:8443"
+    volumes: ["certificates:/certs:ro", "./.creds.example:/app/.creds:ro"]
+    cpus: 2.0
+    mem_limit: 1g
+    pids_limit: 512
+    networks: [preview, access]
+
+networks:
+  preview:
+    internal: true
+  access: {}
+
+volumes:
+  certificates:

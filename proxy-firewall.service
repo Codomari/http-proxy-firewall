@@ -1,0 +1,26 @@
+[Unit]
+Description=Layer 7 Proxy Firewall
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/etc/proxy-firewall
+# The application reads .env and proxy-firewall.conf from WorkingDirectory.
+# make install replaces this fallback with max(1, floor(online CPUs * 2 / 5)).
+ExecStart=/usr/bin/env GOMAXPROCS=1 /etc/proxy-firewall/bin/proxy-firewall
+StandardOutput=append:/etc/proxy-firewall/log/proxy-firewall.log
+StandardError=append:/etc/proxy-firewall/log/proxy-firewall.log
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=35
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/etc/proxy-firewall/log /etc/proxy-firewall/files /etc/proxy-firewall/.cache /etc/proxy-firewall/.certs
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

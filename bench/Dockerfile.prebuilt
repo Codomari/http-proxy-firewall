@@ -1,0 +1,5 @@
+# For environments with an installed Go toolchain and restricted image registries.
+# CGO_ENABLED=0 GOOS=linux GOARCH=<Docker architecture> go build -o bench/bin/benchmark ./bench
+FROM scratch
+COPY bench/bin/benchmark /benchmark
+ENTRYPOINT ["/benchmark"]

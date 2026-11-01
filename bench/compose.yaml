@@ -1,0 +1,99 @@
+name: proxy-firewall-benchmark
+services:
+  cert-init:
+    image: http-proxy-firewall-benchmark:local
+    command: ["cert", "--cert", "/certs/server.crt", "--key", "/certs/server.key", "--key-mode", "0644", "--reuse"]
+    volumes:
+      - certificates:/certs
+    networks: [benchmark]
+    restart: "no"
+
+  backend:
+    image: http-proxy-firewall-benchmark:local
+    build:
+      context: ..
+      dockerfile: bench/Dockerfile
+    command: ["upstream", "--listen", ":8081", "--delay", "${BENCH_BACKEND_DELAY:-0s}"]
+    environment:
+      GOMAXPROCS: "1"
+    cpus: 1.0
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "/benchmark", "check", "--url", "http://127.0.0.1:8081/ready"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    ulimits:
+      nofile: {soft: 65536, hard: 65536}
+    networks: [benchmark]
+
+  firewall:
+    image: http-proxy-firewall:benchmark
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    depends_on:
+      backend: {condition: service_healthy}
+      cert-init: {condition: service_completed_successfully}
+    environment:
+      GOMAXPROCS: "2"
+      PF_LISTEN: 0.0.0.0:8080
+      PF_TLS_LISTEN: 0.0.0.0:8443
+      PF_TLS_ENABLED: "true"
+      PF_TLS_CERT_FILE: /certs/server.crt
+      PF_TLS_KEY_FILE: /certs/server.key
+      PF_TLS_HOSTS: firewall
+      PF_PROXY_TO: http://backend:8081
+      IP_FILTER_WHITELIST: ""
+      IP_FILTER_WHITELIST_NETWORKS: ""
+      IP_FILTER_ALLOWED_COUNTRIES: ""
+      PF_TRUSTED_PROXIES: ""
+      PF_TRUST_CLOUDFLARE_HEADER: "false"
+      DOS_DETECTOR_HOSTNAME_REQUEST_THRESHOLD: "1"
+      DOS_DETECTOR_HOSTNAME_PENALTY_LIFETIME: 30m
+      PF_ENABLE_REDIS: "false"
+      MAXMIND_LICENSE_KEY: ""
+      MAXMIND_DATABASE_PATH: /nonexistent/geo.mmdb
+      PF_GOOGLE_RANGES_URL: ""
+      PF_MAX_CONCURRENT_REQUESTS: "2048"
+      PF_MAX_CONNECTIONS: "8192"
+      PF_UPSTREAM_MAX_CONNECTIONS: "2048"
+      PF_MAX_BUFFERED_BYTES: "268435456"
+      CVE_MITIGATOR_MAX_BODY_BYTES: "33554432"
+      PF_PPROF_ADDRESS: 127.0.0.1:8068
+      PF_METRICS: "true"
+      PF_ADMIN_CREDS_FILE: /app/.creds
+      PF_ADMIN_MAX_HOSTS: "10000"
+      PF_SILENT: "true"
+    cpus: 2.0
+    mem_limit: 1g
+    pids_limit: 512
+    volumes:
+      - certificates:/certs:ro
+      - ../.creds.example:/app/.creds:ro
+    ulimits:
+      nofile: {soft: 65536, hard: 65536}
+    networks: [benchmark]
+
+  loadclient:
+    image: http-proxy-firewall-benchmark:local
+    profiles: [load]
+    depends_on:
+      firewall: {condition: service_started}
+    environment:
+      GOMAXPROCS: "4"
+    cpus: 4.0
+    mem_limit: 2g
+    volumes:
+      - certificates:/certs:ro
+      - ${BENCH_RESULTS_DIR:-./results}:/results
+    ulimits:
+      nofile: {soft: 65536, hard: 65536}
+    networks: [benchmark]
+
+networks:
+  benchmark:
+    internal: true
+
+volumes:
+  certificates:

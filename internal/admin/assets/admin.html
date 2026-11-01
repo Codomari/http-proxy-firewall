@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>Proxy firewall · Server monitor</title>
+  <link rel="icon" type="image/svg+xml" href="/__pf/__admin/assets/favicon.svg">
+  <link rel="stylesheet" href="/__pf/__admin/assets/admin.css">
+  <script defer src="/__pf/__admin/assets/admin.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="page-header">
+      <div><p class="eyebrow">SERVER MONITOR</p><h1>Proxy firewall</h1><p class="subtitle">Host activity and process health, refreshed every 2 seconds.</p></div>
+      <div class="live-controls"><span id="connection" class="status connecting" role="status">Connecting</span><button id="refresh" type="button">Refresh now</button></div>
+    </header>
+    <div id="error" class="error" role="alert" hidden></div>
+    <section class="cards" aria-label="Traffic overview">
+      <article class="card"><span class="label">Total requests</span><strong id="requests">—</strong><span id="rate" class="detail">Waiting for traffic</span></article>
+      <article class="card"><span class="label">In flight</span><strong id="inflight">—</strong><span class="detail">Currently serving</span></article>
+      <article class="card"><span class="label">Rejected · 4xx</span><strong id="rejected">—</strong><span class="detail">Client and firewall responses</span></article>
+      <article class="card"><span class="label">Server errors · 5xx</span><strong id="errors">—</strong><span class="detail">Including upstream failures</span></article>
+    </section>
+    <section class="cards resources" aria-label="CPU and RAM usage">
+      <article class="card"><span class="label">Process CPU</span><strong id="process-cpu">—</strong><span id="process-cpu-detail" class="detail">Collecting a CPU sample…</span></article>
+      <article class="card"><span class="label">Process RAM · RSS</span><strong id="process-ram">—</strong><span id="process-ram-detail" class="detail">Resident physical memory</span></article>
+      <article class="card"><span class="label">Server CPU</span><strong id="server-cpu">—</strong><span id="server-cpu-detail" class="detail">All visible logical CPUs</span></article>
+      <article class="card"><span class="label">Server RAM</span><strong id="server-ram">—</strong><span id="server-ram-detail" class="detail">Used / total physical memory</span></article>
+    </section>
+    <section class="service-grid" aria-label="Storage and intelligence">
+      <article class="card service-card"><div class="service-heading"><h2>Redis</h2><span id="redis-status" class="service-state">Waiting</span></div><div class="service-rates"><div><span class="label">Reads / sec</span><strong id="redis-reads">—</strong></div><div><span class="label">Writes / sec</span><strong id="redis-writes">—</strong></div></div><span id="redis-totals" class="detail">Waiting for storage counters</span><span id="redis-detail" class="detail"></span></article>
+      <article class="card service-card"><div class="service-heading"><h2>MaxMind database</h2><span id="maxmind-status" class="service-state">Waiting</span></div><span class="label">Database file last modified</span><strong id="maxmind-modified" class="file-time">—</strong><span id="maxmind-update" class="detail">Waiting for database status</span><span class="detail">Timestamp comes from the installed file.</span></article>
+    </section>
+    <section class="panel hosts-panel" aria-labelledby="hosts-title">
+      <div class="panel-header"><div><h2 id="hosts-title">Host activity</h2><p id="host-count" class="detail">Loading hosts…</p></div><label class="search-label"><span class="sr-only">Search domains</span><input id="search" type="search" placeholder="Search domains" maxlength="256" autocomplete="off" spellcheck="false"></label></div>
+      <div class="table-scroll"><table><thead><tr><th scope="col">Domain</th><th scope="col">Requests</th><th scope="col">Req / sec</th><th scope="col">In flight</th><th scope="col">4xx</th><th scope="col">5xx</th><th scope="col">DDoS checkpoint</th></tr></thead><tbody id="hosts"><tr><td colspan="7" class="empty">Waiting for the first sample…</td></tr></tbody></table></div>
+      <div class="table-footer"><span id="updated" class="detail">No sample yet</span><span class="detail">All tracked hosts · no pagination</span></div>
+    </section>
+    <section class="runtime" aria-labelledby="runtime-title"><div class="section-heading"><h2 id="runtime-title">Runtime</h2><span class="detail">Live Go process</span></div><div class="runtime-grid">
+      <article class="metric"><span class="label">Goroutines</span><strong id="goroutines">—</strong></article>
+      <article class="metric"><span class="label">Heap allocated</span><strong id="heap">—</strong><span id="heap-inuse" class="detail"></span></article>
+      <article class="metric"><span class="label">Runtime memory</span><strong id="system-memory">—</strong><span id="stack" class="detail"></span></article>
+      <article class="metric"><span class="label">Uptime</span><strong id="uptime">—</strong></article>
+      <article class="metric"><span class="label">GC cycles</span><strong id="gc">—</strong><span id="gc-pause" class="detail"></span></article>
+      <article class="metric"><span class="label">CPU parallelism</span><strong id="cpu">—</strong><span class="detail">GOMAXPROCS / logical CPUs</span></article>
+    </div></section>
+    <footer class="page-footer"><span id="capacity">Bounded host tracking</span><span>Admin requests are excluded from traffic totals.</span></footer>
+  </main>
+</body>
+</html>

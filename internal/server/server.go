@@ -1,0 +1,302 @@
+// Package server owns listener binding, TLS, administration, and graceful drain.
+package server
+
+import (
+	"context"
+	"crypto/tls"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net"
+	"net/http"
+	"net/netip"
+	"strings"
+	"sync"
+	"time"
+
+	"http-proxy-firewall/internal/admin"
+	"http-proxy-firewall/internal/config"
+	"http-proxy-firewall/internal/firewall"
+	"http-proxy-firewall/internal/monitoring"
+	"http-proxy-firewall/internal/proxy"
+
+	"github.com/gofiber/fiber/v3"
+	"golang.org/x/crypto/acme"
+	"golang.org/x/crypto/acme/autocert"
+)
+
+type Server struct {
+	cfg         config.Config
+	app         *fiber.App
+	logger      *slog.Logger
+	manager     *autocert.Manager
+	admin       *http.Server
+	adminUI     *admin.Handler
+	stats       *monitoring.Registry
+	mu          sync.Mutex
+	listeners   []net.Listener
+	httpAddress net.Addr
+	tlsAddress  net.Addr
+	started     bool
+	stopping    bool
+	errors      chan error
+	wg          sync.WaitGroup
+}
+
+func New(cfg config.Config, engine *firewall.Engine, upstream *proxy.Handler, logger *slog.Logger, stats *monitoring.Registry, adminHandler *admin.Handler) (*Server, error) {
+	if engine == nil || upstream == nil {
+		return nil, errors.New("server requires firewall and proxy handlers")
+	}
+	if cfg.Firewall.MaxBodyBytes < 1 || uint64(cfg.Firewall.MaxBodyBytes) > uint64(^uint(0)>>1) {
+		return nil, errors.New("request body limit does not fit a positive int")
+	}
+	if cfg.HTTP.MaxConnections < 1 || cfg.HTTP.MaxConcurrentRequests < 1 {
+		return nil, errors.New("server connection and request limits must be positive")
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
+	if stats == nil {
+		stats = monitoring.New(cfg)
+	}
+	if adminHandler == nil {
+		disabled := cfg
+		disabled.Admin.Enabled = false
+		var err error
+		adminHandler, err = admin.New(disabled, stats, engine, logger)
+		if err != nil {
+			return nil, err
+		}
+	}
+	s := &Server{cfg: cfg, logger: logger, errors: make(chan error, 3), stats: stats, adminUI: adminHandler}
+	s.app = newFiberApp(cfg)
+	s.configureRoutes(engine, upstream)
+	s.configureHTTPServer(upstream)
+	var err error
+	s.admin, err = newAdminServer(cfg.Observability.PprofAddress)
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+type safeLogger struct {
+	logger *slog.Logger
+	mu     sync.Mutex
+	next   time.Time
+}
+
+func (l *safeLogger) Printf(format string, args ...any) {
+	now := time.Now()
+	l.mu.Lock()
+	emit := !now.Before(l.next)
+	if emit {
+		l.next = now.Add(time.Second)
+	}
+	l.mu.Unlock()
+	if emit {
+		l.logger.Warn("HTTP connection failed", "client_ip", connectionClientIP(format, args))
+	}
+}
+
+func connectionClientIP(format string, args []any) string {
+	// fasthttp passes typed local/remote addresses for connection failures.
+	// Headers may not exist yet; only the socket peer can be identified here.
+	if format == "error when serving connection %q<->%q: %v" && len(args) >= 2 {
+		if remote, ok := args[1].(net.Addr); ok && remote != nil {
+			if address, err := netip.ParseAddrPort(remote.String()); err == nil {
+				return address.Addr().Unmap().String()
+			}
+		}
+	}
+	if format == "The number of connections from %s exceeds MaxConnsPerIP=%d" && len(args) > 0 {
+		if address, ok := args[0].(net.IP); ok && address != nil {
+			return address.String()
+		}
+	}
+	// Listener-wide failures have no associated remote address.
+	return "unknown"
+}
+
+// fasthttp reports listener Close errors from Shutdown. Explicit early Close
+// is needed for the startup/shutdown race, so make repeated closes harmless.
+type idempotentListener struct {
+	net.Listener
+	once sync.Once
+}
+
+func (l *idempotentListener) Close() error {
+	var err error
+	l.once.Do(func() { err = l.Listener.Close() })
+	return err
+}
+
+func hostPolicy(hosts []string) autocert.HostPolicy {
+	allowed := autocert.HostWhitelist(hosts...)
+	return func(ctx context.Context, host string) error {
+		name := host
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			name = h
+		}
+		name = strings.TrimSuffix(strings.Trim(name, "[]"), ".")
+		if net.ParseIP(name) != nil {
+			return errors.New("autocert: IP addresses are not allowed")
+		}
+		if len(hosts) != 0 {
+			return allowed(ctx, name)
+		}
+		return nil
+	}
+}
+
+func validateAdminAddress(address string) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return fmt.Errorf("pprof address: %w", err)
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsLoopback() {
+		return errors.New("pprof address must use a loopback IP")
+	}
+	return nil
+}
+
+func (s *Server) Start(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.started || s.stopping {
+		return errors.New("server cannot be started twice")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	tlsConfig, err := s.tlsConfiguration()
+	if err != nil {
+		return err
+	}
+	var listeners []net.Listener
+	cleanup := func() {
+		for _, listener := range listeners {
+			_ = listener.Close()
+		}
+	}
+	httpListener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", s.cfg.HTTP.Listen)
+	if err != nil {
+		return fmt.Errorf("bind HTTP: %w", err)
+	}
+	httpListener = &idempotentListener{Listener: httpListener}
+	listeners = append(listeners, httpListener)
+	var tlsListener, adminListener net.Listener
+	if s.cfg.TLS.Enabled {
+		raw, err := (&net.ListenConfig{}).Listen(ctx, "tcp", s.cfg.HTTP.TLSListen)
+		if err != nil {
+			cleanup()
+			return fmt.Errorf("bind HTTPS: %w", err)
+		}
+		tlsListener = &idempotentListener{Listener: tls.NewListener(raw, tlsConfig)}
+		listeners = append(listeners, tlsListener)
+	}
+	if s.admin != nil {
+		adminListener, err = (&net.ListenConfig{}).Listen(ctx, "tcp", s.admin.Addr)
+		if err != nil {
+			cleanup()
+			return fmt.Errorf("bind pprof: %w", err)
+		}
+		adminListener = &idempotentListener{Listener: adminListener}
+		listeners = append(listeners, adminListener)
+	}
+	s.listeners, s.httpAddress, s.started = listeners, httpListener.Addr(), true
+	if tlsListener != nil {
+		s.tlsAddress = tlsListener.Addr()
+	}
+	s.serve("HTTP", func() error { return s.app.Server().Serve(httpListener) })
+	if tlsListener != nil {
+		s.serve("HTTPS", func() error { return s.app.Server().Serve(tlsListener) })
+	}
+	if adminListener != nil {
+		s.serve("pprof", func() error { return s.admin.Serve(adminListener) })
+	}
+	return nil
+}
+
+func (s *Server) tlsConfiguration() (*tls.Config, error) {
+	if !s.cfg.TLS.Enabled {
+		return nil, nil
+	}
+	minimum := uint16(tls.VersionTLS12)
+	if s.cfg.TLS.AllowLegacyClients {
+		minimum = tls.VersionTLS10
+	}
+	result := &tls.Config{MinVersion: minimum, NextProtos: []string{"http/1.1"}}
+	if s.cfg.TLS.CertificateFile != "" || s.cfg.TLS.PrivateKeyFile != "" {
+		pair, err := tls.LoadX509KeyPair(s.cfg.TLS.CertificateFile, s.cfg.TLS.PrivateKeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("load TLS certificate: %w", err)
+		}
+		result.Certificates = []tls.Certificate{pair}
+	} else {
+		result.GetCertificate = s.manager.GetCertificate
+		result.NextProtos = append(result.NextProtos, acme.ALPNProto)
+	}
+	return result, nil
+}
+
+func (s *Server) serve(name string, run func() error) {
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		err := run()
+		s.mu.Lock()
+		stopping := s.stopping
+		s.mu.Unlock()
+		if !stopping {
+			if err == nil {
+				err = errors.New("listener stopped unexpectedly")
+			}
+			select {
+			case s.errors <- fmt.Errorf("%s listener: %w", name, err):
+			default:
+			}
+		}
+	}()
+}
+
+func (s *Server) Stop(ctx context.Context) error {
+	s.mu.Lock()
+	if s.stopping {
+		s.mu.Unlock()
+		return nil
+	}
+	s.stopping = true
+	listeners, started := append([]net.Listener(nil), s.listeners...), s.started
+	s.mu.Unlock()
+	if !started {
+		return nil
+	}
+	// Closing bound listeners also handles Stop racing before a Serve goroutine
+	// has registered its listener with the underlying HTTP server.
+	for _, listener := range listeners {
+		_ = listener.Close()
+	}
+	var drainErr, adminErr error
+	var drain sync.WaitGroup
+	drain.Add(1)
+	go func() { defer drain.Done(); drainErr = s.app.ShutdownWithContext(ctx) }()
+	if s.admin != nil {
+		drain.Add(1)
+		go func() { defer drain.Done(); adminErr = s.admin.Shutdown(ctx) }()
+	}
+	drain.Wait()
+	done := make(chan struct{})
+	go func() { s.wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	return errors.Join(drainErr, adminErr)
+}
+
+func (s *Server) Errors() <-chan error  { return s.errors }
+func (s *Server) HTTPAddress() net.Addr { s.mu.Lock(); defer s.mu.Unlock(); return s.httpAddress }
+func (s *Server) TLSAddress() net.Addr  { s.mu.Lock(); defer s.mu.Unlock(); return s.tlsAddress }
