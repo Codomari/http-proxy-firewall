@@ -10,7 +10,7 @@
 - HTTP and HTTPS keep-alive, streamed responses, server-sent events and protocol upgrade tunnels.
 - Removal of hop-by-hop headers and generation of verified forwarding headers.
 - Configurable redirect for IPv4 Host requests.
-- Consistent `Server: pf-v2` responses, including errors, admin assets and upgrades.
+- Consistent `Server: pf` responses, including errors, admin assets and upgrades.
 - Bounded upstream pools, timeout handling and explicit overload responses.
 
 ### TLS and certificates

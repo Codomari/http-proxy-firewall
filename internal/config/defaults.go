@@ -2,7 +2,7 @@ package config
 
 import "time"
 
-const ServerName = "pf-v2"
+const ServerName = "pf"
 const DefaultAdminURI = "__pf/__admin"
 
 func Defaults() Config {

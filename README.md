@@ -154,7 +154,7 @@ Both stdout and stderr append to `/etc/proxy-firewall/log/proxy-firewall.log`. I
 
 Upstream failure warnings include the firewall's verified `client_ip`, honoring the configured trusted proxy policy. HTTP connection warnings include the socket peer IP; failures before HTTP headers are parsed cannot identify a client behind a proxy. Listener-wide failures without a connection use `client_ip=unknown`.
 
-HTTP responses identify the firewall as `Server: pf-v2`, including proxied responses, admin assets, errors and protocol upgrades. Upstream `Server` values are replaced.
+HTTP responses identify the firewall as `Server: pf`, including proxied responses, admin assets, errors and protocol upgrades. Upstream `Server` values are replaced.
 
 Installation does not start, restart or enable the service. When ready:
 
