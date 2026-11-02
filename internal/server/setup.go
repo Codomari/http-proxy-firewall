@@ -131,6 +131,7 @@ func (s *Server) configureHTTPServer(upstream *proxy.Handler) {
 		return fasthttp.RequestConfig{ReadTimeout: s.cfg.HTTP.ReadTimeout, WriteTimeout: s.cfg.HTTP.WriteTimeout}
 	}
 	fast.Logger = &safeLogger{logger: s.logger}
+	fast.SecureErrorLogMessage = true
 }
 
 func newAdminServer(address string) (*http.Server, error) {

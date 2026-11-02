@@ -95,8 +95,16 @@ func (l *safeLogger) Printf(format string, args ...any) {
 	}
 	l.mu.Unlock()
 	if emit {
-		l.logger.Warn("HTTP connection failed", "client_ip", connectionClientIP(format, args))
+		l.logger.Warn("HTTP connection failed", "client_ip", connectionClientIP(format, args), "error", connectionError(format, args))
 	}
+}
+
+func connectionError(format string, args []any) string {
+	if format == "error when serving connection %q<->%q: %v" && len(args) >= 3 {
+		return fmt.Sprint(args[2])
+	}
+	// Preserve listener errors and connection-limit diagnostics as well.
+	return fmt.Sprintf(format, args...)
 }
 
 func connectionClientIP(format string, args []any) string {

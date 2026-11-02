@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.5
+
+### Changed
+
+- Include the underlying error in HTTP connection failure warnings, alongside the client IP, while preserving log sampling.
+- Enable secure parser error formatting to omit sensitive request content from connection diagnostics.
+
 ## 0.1.4
 
 ### Added

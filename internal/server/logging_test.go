@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-func TestConnectionWarningLogsPeerWithoutRawErrorText(t *testing.T) {
+func TestConnectionWarningLogsPeerAndError(t *testing.T) {
 	for _, peer := range []string{"198.51.100.9", "2001:db8::9", "::ffff:198.51.100.9"} {
 		t.Run(peer, func(t *testing.T) {
 			var output bytes.Buffer
@@ -20,17 +20,17 @@ func TestConnectionWarningLogsPeerWithoutRawErrorText(t *testing.T) {
 			args := []any{
 				&net.TCPAddr{IP: net.ParseIP("192.0.2.1"), Port: 443},
 				&net.TCPAddr{IP: net.ParseIP(peer), Port: 54321},
-				errors.New("private request header must not be logged"),
+				errors.New("connection reset by peer\nadditional detail"),
 			}
 			for range 2 {
 				logger.Printf("error when serving connection %q<->%q: %v", args...)
 			}
 			line := output.String()
-			if strings.Count(line, "\n") != 1 || !strings.Contains(line, `msg="HTTP connection failed"`) || !strings.Contains(line, "client_ip="+net.ParseIP(peer).String()+"\n") {
+			if strings.Count(line, "\n") != 1 || !strings.Contains(line, `msg="HTTP connection failed"`) || !strings.Contains(line, "client_ip="+net.ParseIP(peer).String()+" ") || !strings.Contains(line, `error="connection reset by peer\nadditional detail"`) {
 				t.Fatalf("missing peer IP or lost error sampling: %q", line)
 			}
-			if strings.Contains(line, "54321") || strings.Contains(line, "192.0.2.1") || strings.Contains(line, "private request") {
-				t.Fatalf("warning exposed local address, port or raw error text: %q", line)
+			if strings.Contains(line, "54321") || strings.Contains(line, "192.0.2.1") {
+				t.Fatalf("warning exposed local address or port: %q", line)
 			}
 		})
 	}
@@ -39,9 +39,9 @@ func TestConnectionWarningLogsPeerWithoutRawErrorText(t *testing.T) {
 func TestConnectionWarningWithoutPeer(t *testing.T) {
 	var output bytes.Buffer
 	logger := &safeLogger{logger: slog.New(slog.NewTextHandler(&output, nil))}
-	logger.Printf("Permanent error when accepting new connections: %v", errors.New("private error"))
-	if !strings.Contains(output.String(), "client_ip=unknown") || strings.Contains(output.String(), "private error") {
-		t.Fatalf("listener warning invented a client IP or leaked its error: %q", output.String())
+	logger.Printf("Permanent error when accepting new connections: %v", errors.New("too many open files"))
+	if !strings.Contains(output.String(), "client_ip=unknown") || !strings.Contains(output.String(), `error="Permanent error when accepting new connections: too many open files"`) {
+		t.Fatalf("listener warning lost its error or invented a client IP: %q", output.String())
 	}
 }
 
@@ -57,6 +57,9 @@ func TestNativeTLSFailureLogsConnectionIP(t *testing.T) {
 	certFile, keyFile, _ := certificateFiles(t)
 	cfg.TLS.Enabled, cfg.TLS.CertificateFile, cfg.TLS.PrivateKeyFile = true, certFile, keyFile
 	s := newTestServer(t, cfg)
+	if !s.app.Server().SecureErrorLogMessage {
+		t.Fatal("connection error logging must redact request data")
+	}
 	lines := make(connectionLogLines, 16)
 	s.app.Server().Logger = &safeLogger{logger: slog.New(slog.NewTextHandler(lines, nil))}
 	if err := s.Start(context.Background()); err != nil {
@@ -74,7 +77,7 @@ func TestNativeTLSFailureLogsConnectionIP(t *testing.T) {
 	_, _ = io.Copy(io.Discard, conn)
 	select {
 	case line := <-lines:
-		if !strings.Contains(line, `msg="HTTP connection failed"`) || !strings.Contains(line, "client_ip=127.0.0.1") || strings.Contains(line, "203.0.113.99") {
+		if !strings.Contains(line, `msg="HTTP connection failed"`) || !strings.Contains(line, "client_ip=127.0.0.1") || !strings.Contains(line, "first record does not look like a TLS handshake") || strings.Contains(line, "203.0.113.99") {
 			t.Fatalf("native connection warning lost peer or trusted unparsed headers: %q", line)
 		}
 	case <-time.After(2 * time.Second):
