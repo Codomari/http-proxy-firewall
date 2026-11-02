@@ -202,8 +202,12 @@ func readBounded(reader io.Reader, limit, knownLength int) ([]byte, error) {
 }
 
 func (e *Engine) reject(c fiber.Ctx, status int, err error, body []byte) error {
+	reason := reasonForRejection(status, err)
+	switch reason {
+	case rejectionMalformed, rejectionBodyLimit, rejectionInputLimit, rejectionUploadProgress:
+		monitoring.RecordCVERejection(c)
+	}
 	if e.logger.Enabled(c.Context(), slog.LevelWarn) {
-		reason := reasonForRejection(status, err)
 		if emit, suppressed := e.rejectionLogs.allow(reason, e.now()); emit {
 			e.logRejection(c, status, err, body, reason, suppressed)
 		}

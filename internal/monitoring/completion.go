@@ -19,6 +19,7 @@ type completion struct {
 	host         *hostRecord
 	once         sync.Once
 	asynchronous atomic.Bool
+	cveRejected  atomic.Bool
 }
 
 func (c *completion) finish(status int, bytesOut uint64) {
@@ -65,6 +66,17 @@ func Completion(c fiber.Ctx) func(status int, bytesOut uint64) {
 func AddBytesIn(c fiber.Ctx, bytes uint64) {
 	if owned, ok := c.Locals(completionKey{}).(*completion); ok && owned.host != nil {
 		owned.host.bytesIn.Add(bytes)
+	}
+}
+
+// RecordCVERejection counts a request blocked by a CVE rule once. It is
+// independent of log sampling and includes hosts outside the bounded table.
+func RecordCVERejection(c fiber.Ctx) {
+	if owned, ok := c.Locals(completionKey{}).(*completion); ok && owned.cveRejected.CompareAndSwap(false, true) {
+		owned.registry.totals.cveRejected.Add(1)
+		if owned.host != nil {
+			owned.host.cveRejected.Add(1)
+		}
 	}
 }
 

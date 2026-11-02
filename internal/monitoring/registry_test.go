@@ -201,7 +201,12 @@ func TestManualTunnelCompletionOwnsCountersAndIsIdempotent(t *testing.T) {
 
 func TestConcurrentHostRequestsAndSnapshots(t *testing.T) {
 	r := testRegistry(8)
-	app := registryApp(r, func(c fiber.Ctx) error { AddBytesIn(c, 2); return c.SendString("x") })
+	app := registryApp(r, func(c fiber.Ctx) error {
+		AddBytesIn(c, 2)
+		RecordCVERejection(c)
+		RecordCVERejection(c)
+		return c.SendString("x")
+	})
 	handler := app.Handler()
 	const workers, perWorker = 16, 100
 	var wg sync.WaitGroup
@@ -219,7 +224,7 @@ func TestConcurrentHostRequestsAndSnapshots(t *testing.T) {
 	wg.Wait()
 	totals := r.Totals()
 	hosts := r.Hosts()
-	if totals.Requests != workers*perWorker || totals.InFlight != 0 || len(hosts) != 1 || hosts[0].Requests != workers*perWorker || hosts[0].BytesIn != 2*workers*perWorker || hosts[0].BytesOut != workers*perWorker {
+	if totals.Requests != workers*perWorker || totals.InFlight != 0 || len(hosts) != 1 || hosts[0].Requests != workers*perWorker || hosts[0].BytesIn != 2*workers*perWorker || hosts[0].BytesOut != workers*perWorker || totals.CVERejected != workers*perWorker || hosts[0].CVERejected != workers*perWorker {
 		t.Fatalf("lost concurrent updates: totals=%+v hosts=%+v", totals, hosts)
 	}
 }
@@ -249,11 +254,12 @@ func TestDisabledRegistryDoesNotTrackAllocateOrStartWorkers(t *testing.T) {
 			t.Fatal("disabled registry wrapped stream")
 		}
 		AddBytesIn(c, 10)
+		RecordCVERejection(c)
 		Completion(c)(200, 10)
 		return c.SendString("ok")
 	})
 	app.Handler()(requestContext("example.test", "/"))
-	if normalized || r.Totals().Requests != 0 || len(r.Hosts()) != 0 {
+	if normalized || r.Totals().CVERejected != 0 || r.Totals().Requests != 0 || len(r.Hosts()) != 0 {
 		t.Fatal("disabled registry tracked requests")
 	}
 	if after := runtime.NumGoroutine(); after > before+1 {

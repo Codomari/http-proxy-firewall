@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -271,4 +272,44 @@ func TestMonitoringCountsAdmission503WhileAdminRemainsAvailable(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitForNoInFlight(t, s)
+}
+
+func TestCVEBlocksReachAdminOverviewAndHostAPI(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(403) }))
+	defer upstream.Close()
+	s := startAdminTestServer(t, adminConfig(upstream.URL))
+	for _, hostname := range []string{"alpha.example", "beta.example", "alpha.example"} {
+		req, _ := http.NewRequest(http.MethodPost, "http://"+s.HTTPAddress().String()+"/", strings.NewReader("invalid"))
+		req.Host = hostname
+		req.Header.Set("Content-Type", "multipart/form-data; boundary=b")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != 400 {
+			t.Fatalf("CVE rejection status = %d", resp.StatusCode)
+		}
+	}
+	waitForNoInFlight(t, s)
+	totals, hosts := readOverview(t, s)
+	if totals.CVERejected != 3 || len(hosts) != 2 || hosts[0].Hostname != "alpha.example" || hosts[0].CVERejected != 2 || hosts[1].CVERejected != 1 {
+		t.Fatalf("CVE overview: totals=%+v hosts=%+v", totals, hosts)
+	}
+	req, _ := http.NewRequest(http.MethodGet, "http://"+s.HTTPAddress().String()+admin.BasePath+"/api/hosts?search=beta", nil)
+	req.SetBasicAuth(s.cfg.Admin.Accounts[0].User, s.cfg.Admin.Accounts[0].Password)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var list struct {
+		Hosts []monitoring.HostSnapshot `json:"hosts"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 200 || len(list.Hosts) != 1 || list.Hosts[0].Hostname != "beta.example" || list.Hosts[0].CVERejected != 1 {
+		t.Fatalf("CVE host search: status=%d hosts=%+v", resp.StatusCode, list.Hosts)
+	}
 }

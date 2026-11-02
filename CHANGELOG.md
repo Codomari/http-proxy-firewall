@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.4
+
+### Added
+
+- Aggregate CVE block counter in the admin traffic overview and a sortable CVE blocks column for each hostname.
+- Process-local `cve_rejected` counters in the overview and host APIs, independent of rejection log sampling and bounded host capacity.
+
 ## 0.1.3
 
 ### Changed

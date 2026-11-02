@@ -25,6 +25,7 @@ import (
 	"http-proxy-firewall/internal/cache"
 	"http-proxy-firewall/internal/config"
 	cve2026109618 "http-proxy-firewall/internal/firewall/cves/2026-109618"
+	"http-proxy-firewall/internal/monitoring"
 	"http-proxy-firewall/internal/session"
 )
 
@@ -700,5 +701,51 @@ func TestTextLoggerSerializesExcerptOnceWithinLimit(t *testing.T) {
 		if truncated := len(decoded) < len(body); !strings.Contains(line, fmt.Sprintf("form_data_truncated=%t", truncated)) {
 			t.Fatalf("wrong truncation flag: %q", line)
 		}
+	}
+}
+
+func TestCVERejectionCounters(t *testing.T) {
+	cfg := testConfig()
+	cfg.Admin.Enabled, cfg.Admin.MaxHosts = true, 1
+	cfg.Firewall.RejectionLogInterval = time.Hour
+	e := testEngine(t, cfg, nil)
+	var logs bytes.Buffer
+	e.logger = slog.New(slog.NewTextHandler(&logs, nil))
+	registry := monitoring.New(cfg)
+	app := fiber.New(fiber.Config{StreamRequestBody: true, DisablePreParseMultipartForm: true})
+	app.Use(registry.Middleware(normalizeHostname))
+	app.Use(e.Handler)
+	app.Use(func(c fiber.Ctx) error { return c.SendStatus(404) })
+	upload, uploadType := uploadBody(t, []string{"PHP_SESSION_UPLOAD_PROGRESS"}, "")
+	cases := []struct {
+		method, contentType, body, host string
+		status                          int
+		cves                            uint64
+	}{
+		{"POST", "multipart/form-data; boundary=b", "invalid", "example.test", 400, 1},
+		{"POST", "multipart/form-data; boundary=b", "invalid", "example.test", 400, 2},
+		{"POST", uploadType, string(upload), "example.test", 403, 3},
+		{"POST", "", strings.Repeat("x", 1025), "example.test", 413, 4},
+		{"POST", "application/x-www-form-urlencoded", strings.Repeat("x[", 17) + "=1", "example.test", 413, 5},
+		{"GET", "", "body", "example.test", 400, 5},
+		{"GET", "", "", "example.test", 404, 5},
+		{"POST", "multipart/form-data; boundary=b", "invalid", "other.test", 400, 6},
+	}
+	for _, tc := range cases {
+		raw := strings.Replace(rawRequest(tc.method, "/", tc.contentType, []byte(tc.body), false, ""), "Host: example.test", "Host: "+tc.host, 1)
+		ctx := serve(t, app, e, raw, "192.0.2.1")
+		if ctx.Response.StatusCode() != tc.status {
+			t.Fatalf("status = %d, want %d for %+v", ctx.Response.StatusCode(), tc.status, tc)
+		}
+		if got := registry.Totals().CVERejected; got != tc.cves {
+			t.Fatalf("CVE total = %d, want %d", got, tc.cves)
+		}
+	}
+	hosts := registry.Hosts()
+	if len(hosts) != 1 || hosts[0].Hostname != "example.test" || hosts[0].CVERejected != 5 || hosts[0].Rejected != 7 || registry.Totals().UntrackedRequests != 1 {
+		t.Fatalf("incorrect counters: hosts=%+v totals=%+v", hosts, registry.Totals())
+	}
+	if strings.Count(logs.String(), "reason=malformed") != 1 {
+		t.Fatal("malformed logs were not sampled")
 	}
 }

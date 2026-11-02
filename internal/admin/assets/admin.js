@@ -39,6 +39,7 @@
     text("requests", number.format(total.requests));
     text("inflight", number.format(total.inflight));
     text("rejected", number.format(total.rejected));
+    text("cve-rejected", number.format(total.cve_rejected));
     text("errors", number.format(total.errors_5xx));
     const previous = state.previousTotal;
     const requestRate = previous && now > previous.time && total.requests >= previous.requests ? (total.requests - previous.requests) * 1000 / (now - previous.time) : null;
@@ -98,6 +99,7 @@
       cell(row, host.rps === null ? "—" : rateNumber.format(host.rps));
       cell(row, number.format(host.inflight));
       cell(row, number.format(host.rejected));
+      cell(row, number.format(host.cve_rejected));
       cell(row, number.format(host.errors_5xx));
       const status = cell(row, ""), badge = document.createElement("span");
       badge.className = `ddos-badge${host.ddos ? " active" : ""}`;
@@ -108,7 +110,7 @@
     }
     if (!hosts.length) {
       const row = document.createElement("tr"), empty = cell(row, state.search ? "No hosts match your search." : "No host traffic recorded yet.");
-      empty.colSpan = 7; empty.className = "empty"; fragment.appendChild(row);
+      empty.colSpan = 8; empty.className = "empty"; fragment.appendChild(row);
     }
     body.replaceChildren(fragment);
   }

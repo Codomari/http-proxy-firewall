@@ -17,20 +17,22 @@ import (
 )
 
 type HostSnapshot struct {
-	Hostname  string    `json:"hostname"`
-	Requests  uint64    `json:"requests"`
-	InFlight  uint64    `json:"inflight"`
-	Rejected  uint64    `json:"rejected"`
-	Errors5xx uint64    `json:"errors_5xx"`
-	BytesIn   uint64    `json:"bytes_in"`
-	BytesOut  uint64    `json:"bytes_out"`
-	LastSeen  time.Time `json:"last_seen"`
+	Hostname    string    `json:"hostname"`
+	Requests    uint64    `json:"requests"`
+	InFlight    uint64    `json:"inflight"`
+	Rejected    uint64    `json:"rejected"`
+	CVERejected uint64    `json:"cve_rejected"`
+	Errors5xx   uint64    `json:"errors_5xx"`
+	BytesIn     uint64    `json:"bytes_in"`
+	BytesOut    uint64    `json:"bytes_out"`
+	LastSeen    time.Time `json:"last_seen"`
 }
 
 type TotalsSnapshot struct {
 	Requests          uint64 `json:"requests"`
 	InFlight          uint64 `json:"inflight"`
 	Rejected          uint64 `json:"rejected"`
+	CVERejected       uint64 `json:"cve_rejected"`
 	Errors5xx         uint64 `json:"errors_5xx"`
 	TrackedHosts      int    `json:"tracked_hosts"`
 	UntrackedRequests uint64 `json:"untracked_requests"`
@@ -52,10 +54,11 @@ type RuntimeSnapshot struct {
 }
 
 type counters struct {
-	requests  atomic.Uint64
-	inflight  atomic.Uint64
-	rejected  atomic.Uint64
-	errors5xx atomic.Uint64
+	requests    atomic.Uint64
+	inflight    atomic.Uint64
+	rejected    atomic.Uint64
+	cveRejected atomic.Uint64
+	errors5xx   atomic.Uint64
 }
 
 type hostRecord struct {
@@ -167,7 +170,7 @@ func (r *Registry) Hosts() []HostSnapshot {
 	for _, host := range hosts {
 		result = append(result, HostSnapshot{
 			Hostname: host.hostname, Requests: host.requests.Load(), InFlight: host.inflight.Load(),
-			Rejected: host.rejected.Load(), Errors5xx: host.errors5xx.Load(),
+			Rejected: host.rejected.Load(), CVERejected: host.cveRejected.Load(), Errors5xx: host.errors5xx.Load(),
 			BytesIn: host.bytesIn.Load(), BytesOut: host.bytesOut.Load(), LastSeen: time.Unix(0, host.lastSeen.Load()).UTC(),
 		})
 	}
@@ -186,7 +189,7 @@ func (r *Registry) Totals() TotalsSnapshot {
 	r.mu.RUnlock()
 	return TotalsSnapshot{
 		Requests: r.totals.requests.Load(), InFlight: r.totals.inflight.Load(), Rejected: r.totals.rejected.Load(), Errors5xx: r.totals.errors5xx.Load(),
-		TrackedHosts: tracked, UntrackedRequests: r.untracked.Load(), Capacity: r.capacity,
+		CVERejected: r.totals.cveRejected.Load(), TrackedHosts: tracked, UntrackedRequests: r.untracked.Load(), Capacity: r.capacity,
 	}
 }
 
