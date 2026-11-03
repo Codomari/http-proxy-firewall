@@ -5,6 +5,7 @@
   const number = new Intl.NumberFormat(undefined, {maximumFractionDigits: 0});
   const rateNumber = new Intl.NumberFormat(undefined, {maximumFractionDigits: 1});
   const state = {search: "", sort: "rps", direction: "descending", hosts: [], version: 0, previous: new Map(), previousTotal: null, previousRedis: null, timer: null, inflight: false, pending: false};
+  let activeTab = "monitoring";
   const text = (id, value) => { byId(id).textContent = value; };
   const percent = (value) => value == null ? "—" : `${rateNumber.format(value)}%`;
   const frequency = (count, previous, key, now) => previous && now > previous.time && count >= previous[key] ? (count - previous[key]) * 1000 / (now - previous.time) : null;
@@ -63,6 +64,7 @@
     text("server-ram", percent(runtime.server_memory_percent));
     text("server-ram-detail", runtime.server_memory_used_bytes == null || runtime.server_memory_bytes == null ? "Unavailable on this OS" : `${bytes(runtime.server_memory_used_bytes)} / ${bytes(runtime.server_memory_bytes)} used`);
     renderServices(data.services, now);
+    renderDisks(data.disks);
     text("capacity", `${number.format(total.tracked_hosts)} / ${number.format(total.capacity)} hosts tracked · ${number.format(total.untracked_requests)} requests outside host table`);
     const samples = new Map();
     state.hosts = data.hosts.map((host) => {
@@ -133,6 +135,297 @@
     text("maxmind-modified", database.last_modified ? new Date(database.last_modified).toLocaleString() : "No database file");
     text("maxmind-update", database.updating ? "Downloading and validating an update…" : database.auto_update_enabled ? "Automatic updates enabled" : "Automatic updates disabled");
   }
+  function renderDisks(disks) {
+    const body = byId("disks"), fragment = document.createDocumentFragment();
+    const mounts = disks && Array.isArray(disks.mounts) ? disks.mounts : [];
+    text("disk-status", disks && disks.available ? `${number.format(mounts.length)} mounts visible to this service · space sampled every 5 seconds · shared filesystems are listed per mount` : "Disk information is unavailable on this OS.");
+    for (const disk of mounts) {
+      const row = document.createElement("tr"), mount = cell(row, disk.mount, disk.mount);
+      const source = document.createElement("span");
+      source.className = "mount-source";
+      source.textContent = disk.source;
+      mount.appendChild(source);
+      cell(row, `${disk.filesystem}${disk.read_only ? " · read only" : ""}`);
+      for (const key of ["total_bytes", "used_bytes", "available_bytes"]) cell(row, disk[key] == null ? "—" : bytes(disk[key]));
+      const usage = cell(row, percent(disk.used_percent));
+      if (disk.used_percent >= 90) usage.className = "disk-warning";
+      fragment.appendChild(row);
+    }
+    if (!mounts.length) {
+      const row = document.createElement("tr"), empty = cell(row, "No mounted filesystem information available.");
+      empty.colSpan = 6; empty.className = "empty"; fragment.appendChild(row);
+    }
+    body.replaceChildren(fragment);
+  }
+  const logs = {open: false, cursor: "", timer: null, controller: null, limited: false};
+  function appendLogs(data, target = logs, prefix = "log") {
+    const view = byId(`${prefix}-lines`);
+    const follow = view.childElementCount === 0 || view.scrollHeight - view.scrollTop - view.clientHeight < 40;
+    const fragment = document.createDocumentFragment();
+    for (const line of data.lines.slice(-10000)) {
+      const node = document.createElement("div");
+      node.textContent = line || " ";
+      fragment.appendChild(node);
+    }
+    view.appendChild(fragment);
+    const before = view.scrollHeight;
+    while (view.childElementCount > 10000) view.firstElementChild.remove();
+    if (follow) view.scrollTop = view.scrollHeight;
+    else view.scrollTop = Math.max(0, view.scrollTop - (before - view.scrollHeight));
+    target.cursor = data.cursor;
+    target.limited = target.limited || data.limited;
+    text(`${prefix}-status`, `${prefix === "debug" && !target.enabled ? "Capture disabled" : "Live"} · ${number.format(view.childElementCount)} / 10,000 lines${data.reset && view.childElementCount > data.lines.length ? " · log restarted or rotated" : ""}${target.limited ? " · some log content was truncated" : ""}`);
+  }
+  async function pollLogs() {
+    if (!logs.open || activeTab !== "logs" || document.hidden || logs.controller) return;
+    clearTimeout(logs.timer);
+    const controller = new AbortController();
+    logs.controller = controller;
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    let more = false;
+    try {
+      const query = new URLSearchParams();
+      if (logs.cursor) query.set("cursor", logs.cursor);
+      const response = await fetch(`${base}/api/logs?${query}`, {credentials: "same-origin", cache: "no-store", signal: controller.signal});
+      if (!response.ok) throw new Error(response.status === 401 ? "Authentication expired. Reload to sign in." : response.status === 503 ? "Log file unavailable. Waiting for the service log…" : `HTTP ${response.status}`);
+      const data = await response.json();
+      if (logs.open && logs.controller === controller && !controller.signal.aborted) { appendLogs(data); more = data.more; }
+    } catch (error) {
+      if (logs.open && logs.controller === controller) text("log-status", error.name === "AbortError" ? "Log request timed out. Retrying…" : `Unable to read logs: ${error.message}`);
+    } finally {
+      clearTimeout(timeout);
+      if (logs.controller === controller) {
+        logs.controller = null;
+        if (logs.open && activeTab === "logs" && !document.hidden) logs.timer = setTimeout(pollLogs, more ? 100 : 2000);
+      }
+    }
+  }
+  byId("show-logs").addEventListener("click", () => {
+    logs.open = !logs.open;
+    byId("show-logs").setAttribute("aria-expanded", String(logs.open));
+    text("show-logs", logs.open ? "Hide logs" : "Show logs");
+    byId("log-content").hidden = !logs.open;
+    clearTimeout(logs.timer);
+    if (logs.controller) { logs.controller.abort(); logs.controller = null; }
+    if (logs.open) {
+      logs.cursor = ""; logs.limited = false;
+      byId("log-lines").replaceChildren();
+      text("log-status", "Loading latest 100 lines…");
+      pollLogs();
+    } else text("log-status", "Latest 100 lines · keeps up to 10,000 lines while open");
+  });
+  const debug = {hostname: "", clientIP: "", file: "", enabled: false, cursor: "", limited: false, unparsed: false, timer: null, controller: null, busy: false};
+  function appendDebug(data) {
+    const body = byId("debug-rows"), view = byId("debug-scroll");
+    const follow = body.childElementCount === 0 || view.scrollHeight - view.scrollTop - view.clientHeight < 40;
+    const fragment = document.createDocumentFragment();
+    for (const entry of data.entries.slice(-10000)) {
+      const row = document.createElement("tr");
+      if (entry.raw !== undefined) {
+        const content = cell(row, "Unparsed log entry"), raw = document.createElement("pre");
+        content.colSpan = 6;
+        raw.textContent = entry.raw;
+        content.appendChild(raw);
+        debug.unparsed = true;
+      } else {
+        for (const value of [entry.timestamp, entry.client_ip, entry.hostname, entry.method, entry.url]) cell(row, value);
+        const headers = cell(row, ""), details = document.createElement("details"), summary = document.createElement("summary"), values = document.createElement("pre");
+        summary.textContent = `${number.format(entry.headers.length)} headers`;
+        values.textContent = entry.headers.map(header => `${header.name}: ${header.value}`).join("\n");
+        details.appendChild(summary); details.appendChild(values); headers.appendChild(details);
+      }
+      fragment.appendChild(row);
+    }
+    body.appendChild(fragment);
+    const before = view.scrollHeight;
+    while (body.childElementCount > 10000) body.firstElementChild.remove();
+    if (follow) view.scrollTop = view.scrollHeight;
+    else view.scrollTop = Math.max(0, view.scrollTop - (before - view.scrollHeight));
+    debug.cursor = data.cursor;
+    debug.limited = debug.limited || data.limited;
+    byId("debug-empty").hidden = body.childElementCount > 0;
+    text("debug-status", `${debug.enabled ? "Live" : "Capture disabled"} · ${number.format(body.childElementCount)} / 10,000 requests · pulls every 2 seconds${data.reset && body.childElementCount > data.entries.length ? " · log restarted or rotated" : ""}${debug.limited ? " · some log content was truncated" : ""}${debug.unparsed ? " · unparsed entries shown as text" : ""}`);
+  }
+  const cloudflare = {busy: false, key: "", timer: null, controller: null};
+  function renderCloudflare(data) {
+    if (!data || cloudflare.busy) return;
+    const key = JSON.stringify(data);
+    if (key === cloudflare.key) return;
+    cloudflare.key = key;
+    byId("cloudflare-save").disabled = !data.available;
+    text("cloudflare-status", data.available ? `${number.format(data.hosts.length)} domain rules · changes apply immediately` : "Domain rules are unavailable.");
+    const fragment = document.createDocumentFragment();
+    for (const host of data.hosts) {
+      const row = document.createElement("tr");
+      cell(row, host.hostname);
+      cell(row, "Cloudflare");
+      const action = cell(row, ""), button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute("role", "switch");
+      button.setAttribute("aria-checked", String(host.enabled));
+      button.setAttribute("aria-label", `Behind Cloudflare for ${host.hostname}`);
+      button.textContent = host.enabled ? "On" : "Off";
+      button.addEventListener("click", () => saveCloudflare(host.hostname, !host.enabled));
+      action.appendChild(button);
+      fragment.appendChild(row);
+    }
+    if (!data.hosts.length) {
+      const row = document.createElement("tr"), empty = cell(row, "No domain rules. Add a domain and select its rule above.");
+      empty.colSpan = 3; empty.className = "empty"; fragment.appendChild(row);
+    }
+    byId("cloudflare-hosts").replaceChildren(fragment);
+  }
+  function pauseRules() {
+    clearTimeout(cloudflare.timer);
+    if (cloudflare.controller) { cloudflare.controller.abort(); cloudflare.controller = null; }
+  }
+  async function pollRules() {
+    if (activeTab !== "rules" || document.hidden || cloudflare.controller || cloudflare.busy) return;
+    clearTimeout(cloudflare.timer);
+    const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 10000);
+    cloudflare.controller = controller;
+    try {
+      const response = await fetch(`${base}/api/cloudflare-hosts`, {credentials: "same-origin", cache: "no-store", signal: controller.signal});
+      if (!response.ok) throw new Error(response.status === 401 ? "Authentication expired. Reload to sign in." : `HTTP ${response.status}`);
+      const data = await response.json();
+      if (cloudflare.controller === controller && !controller.signal.aborted) renderCloudflare(data);
+    } catch (error) {
+      if (cloudflare.controller === controller) text("cloudflare-status", `Unable to load domain rules: ${error.message}`);
+    } finally {
+      clearTimeout(timeout);
+      if (cloudflare.controller === controller) {
+        cloudflare.controller = null;
+        if (activeTab === "rules" && !document.hidden) cloudflare.timer = setTimeout(pollRules, 2000);
+      }
+    }
+  }
+  async function saveCloudflare(hostname, enabled) {
+    if (cloudflare.busy) return;
+    pauseRules();
+    cloudflare.busy = true;
+    byId("cloudflare-save").disabled = true;
+    for (const button of byId("cloudflare-hosts").querySelectorAll("button")) button.disabled = true;
+    byId("cloudflare-error").hidden = true;
+    const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+      const query = new URLSearchParams({hostname, enabled: String(enabled)});
+      const response = await fetch(`${base}/api/cloudflare-hosts?${query}`, {method: "POST", headers: {"X-PF-Admin": "1"}, credentials: "same-origin", cache: "no-store", signal: controller.signal});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      cloudflare.busy = false;
+      cloudflare.key = "";
+      renderCloudflare(data);
+    } catch (error) {
+      text("cloudflare-error", error.name === "AbortError" ? "Settings save timed out. Refresh to check the current state." : error.message);
+      byId("cloudflare-error").hidden = false;
+    } finally {
+      clearTimeout(timeout);
+      cloudflare.busy = false;
+      byId("cloudflare-save").disabled = false;
+      for (const button of byId("cloudflare-hosts").querySelectorAll("button")) button.disabled = false;
+      cloudflare.key = "";
+      pollRules();
+    }
+  }
+  byId("cloudflare-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (byId("rule-type").value === "cloudflare") saveCloudflare(byId("cloudflare-hostname").value, byId("cloudflare-enabled").checked);
+  });
+  function renderDebug(status) {
+    if (status.hostname !== debug.hostname || status.file !== debug.file) {
+      debug.cursor = ""; debug.limited = false; debug.unparsed = false;
+      byId("debug-rows").replaceChildren();
+      byId("debug-empty").hidden = false;
+    }
+    debug.hostname = status.hostname;
+    debug.clientIP = status.client_ip;
+    debug.file = status.file;
+    debug.enabled = status.enabled;
+    text("debug-empty", status.hostname ? "No captured requests yet for this hostname and source rule. Waiting for matching traffic…" : "Enable a capture rule to see matching requests.");
+    text("debug-capture-status", status.hostname ? `${status.enabled ? "Capturing" : "Disabled"} · ${status.hostname} · source: ${status.client_ip || "all IPs"} · ${status.file}${status.error ? ` · ${status.error}` : ""}` : "Debug is disabled. Enter a hostname to start capturing requests.");
+    byId("debug-disable").disabled = debug.busy || !status.enabled;
+  }
+  function pauseDebug() {
+    clearTimeout(debug.timer);
+    if (debug.controller) { debug.controller.abort(); debug.controller = null; }
+  }
+  async function pollDebug() {
+    if (activeTab !== "debug" || document.hidden || debug.controller || debug.busy) return;
+    clearTimeout(debug.timer);
+    const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 10000);
+    debug.controller = controller;
+    let more = false;
+    try {
+      const query = new URLSearchParams({hostname: debug.hostname, client_ip: debug.clientIP, cursor: debug.cursor});
+      const response = await fetch(`${base}/api/debug/logs?${query}`, {credentials: "same-origin", cache: "no-store", signal: controller.signal});
+      if (response.status === 401) throw new Error("Authentication expired. Reload to sign in.");
+      const data = await response.json();
+      if (debug.controller === controller && !controller.signal.aborted) {
+        if (data.status) renderDebug(data.status);
+        if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+        appendDebug(data); more = data.more;
+      }
+    } catch (error) {
+      if (debug.controller === controller) text("debug-status", `Unable to read debug logs: ${error.message}`);
+    } finally {
+      clearTimeout(timeout);
+      if (debug.controller === controller) {
+        debug.controller = null;
+        if (activeTab === "debug" && !document.hidden) debug.timer = setTimeout(pollDebug, more ? 100 : 2000);
+      }
+    }
+  }
+  async function changeDebug(disable) {
+    if (debug.busy) return;
+    pauseDebug();
+    debug.busy = true;
+    byId("debug-enable").disabled = true;
+    byId("debug-disable").disabled = true;
+    byId("debug-error").hidden = true;
+    const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+      const query = new URLSearchParams({hostname: byId("debug-hostname").value, client_ip: byId("debug-client-ip").value});
+      const response = await fetch(`${base}/api/debug?${query}`, {method: disable ? "DELETE" : "POST", headers: {"X-PF-Admin": "1"}, credentials: "same-origin", cache: "no-store", signal: controller.signal});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      renderDebug(data);
+    } catch (error) {
+      text("debug-error", error.name === "AbortError" ? "Debug control timed out. Refreshing the server state…" : error.message);
+      byId("debug-error").hidden = false;
+    } finally {
+      clearTimeout(timeout);
+      debug.busy = false;
+      byId("debug-enable").disabled = false;
+      byId("debug-disable").disabled = !debug.enabled;
+      pollDebug();
+    }
+  }
+  byId("debug-form").addEventListener("submit", (event) => { event.preventDefault(); changeDebug(false); });
+  byId("debug-disable").addEventListener("click", () => changeDebug(true));
+  const tabNames = ["monitoring", "logs", "rules", "debug", "hosts"];
+  function selectTab(name, focus = false) {
+    activeTab = name;
+    for (const candidate of tabNames) {
+      const button = byId(`tab-${candidate}`), selected = candidate === name;
+      button.setAttribute("aria-selected", String(selected));
+      button.tabIndex = selected ? 0 : -1;
+      byId(`view-${candidate}`).hidden = !selected;
+    }
+    clearTimeout(logs.timer);
+    if (name !== "logs") {
+      if (logs.controller) { logs.controller.abort(); logs.controller = null; }
+    } else pollLogs();
+    if (name === "debug") pollDebug(); else pauseDebug();
+    if (name === "rules") pollRules(); else pauseRules();
+    if (focus) byId(`tab-${name}`).focus();
+  }
+  for (const [index, name] of tabNames.entries()) {
+    byId(`tab-${name}`).addEventListener("click", () => selectTab(name));
+    byId(`tab-${name}`).addEventListener("keydown", (event) => {
+      const next = event.key === "Home" ? 0 : event.key === "End" ? tabNames.length - 1 : event.key === "ArrowRight" ? (index + 1) % tabNames.length : event.key === "ArrowLeft" ? (index + tabNames.length - 1) % tabNames.length : null;
+      if (next !== null) { event.preventDefault(); selectTab(tabNames[next], true); }
+    });
+  }
   function schedule() {
     clearTimeout(state.timer);
     if (!document.hidden) state.timer = setTimeout(poll, 2000);
@@ -178,9 +471,15 @@
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => { state.search = event.target.value; state.version++; state.previous.clear(); poll(); }, 250);
   });
-  byId("refresh").addEventListener("click", poll);
+  byId("refresh").addEventListener("click", () => { poll(); pollLogs(); pollRules(); pollDebug(); });
   document.addEventListener("visibilitychange", () => {
     clearTimeout(state.timer);
+    clearTimeout(logs.timer);
+    pauseDebug();
+    pauseRules();
+    if (!document.hidden) pollRules();
+    if (!document.hidden) pollDebug();
+    if (!document.hidden) pollLogs();
     if (document.hidden) connection("Paused", "paused"); else { connection("Connecting", "connecting"); poll(); }
   });
   poll();

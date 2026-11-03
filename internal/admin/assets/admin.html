@@ -16,6 +16,15 @@
       <div class="live-controls"><span id="connection" class="status connecting" role="status">Connecting</span><button id="refresh" type="button">Refresh now</button></div>
     </header>
     <div id="error" class="error" role="alert" hidden></div>
+    <div class="dashboard-tabs" role="tablist" aria-label="Dashboard views">
+      <button id="tab-monitoring" type="button" role="tab" aria-selected="true" aria-controls="view-monitoring" tabindex="0">Monitoring</button>
+      <button id="tab-logs" type="button" role="tab" aria-selected="false" aria-controls="view-logs" tabindex="-1">Logs</button>
+      <button id="tab-rules" type="button" role="tab" aria-selected="false" aria-controls="view-rules" tabindex="-1">Rules</button>
+      <button id="tab-debug" type="button" role="tab" aria-selected="false" aria-controls="view-debug" tabindex="-1">Debug</button>
+      <button id="tab-hosts" type="button" role="tab" aria-selected="false" aria-controls="view-hosts" tabindex="-1">Host Activity</button>
+    </div>
+    <div id="view-monitoring" role="tabpanel" aria-labelledby="tab-monitoring" tabindex="0">
+    <details class="dashboard-group" open><summary class="section-heading"><h2>Traffic overview</h2></summary>
     <section class="cards traffic" aria-label="Traffic overview">
       <article class="card"><span class="label">Total requests</span><strong id="requests">—</strong><span id="rate" class="detail">Waiting for traffic</span></article>
       <article class="card"><span class="label">In flight</span><strong id="inflight">—</strong><span class="detail">Currently serving</span></article>
@@ -23,29 +32,68 @@
       <article class="card"><span class="label">CVE blocks</span><strong id="cve-rejected">—</strong><span class="detail">Requests rejected by CVE rules</span></article>
       <article class="card"><span class="label">Server errors · 5xx</span><strong id="errors">—</strong><span class="detail">Including upstream failures</span></article>
     </section>
+    </details>
+    <details class="dashboard-group" open><summary class="section-heading"><h2>CPU and RAM usage</h2></summary>
     <section class="cards resources" aria-label="CPU and RAM usage">
       <article class="card"><span class="label">Process CPU</span><strong id="process-cpu">—</strong><span id="process-cpu-detail" class="detail">Collecting a CPU sample…</span></article>
       <article class="card"><span class="label">Process RAM · RSS</span><strong id="process-ram">—</strong><span id="process-ram-detail" class="detail">Resident physical memory</span></article>
       <article class="card"><span class="label">Server CPU</span><strong id="server-cpu">—</strong><span id="server-cpu-detail" class="detail">All visible logical CPUs</span></article>
       <article class="card"><span class="label">Server RAM</span><strong id="server-ram">—</strong><span id="server-ram-detail" class="detail">Used / total physical memory</span></article>
     </section>
+    </details>
+    <details class="dashboard-group" open><summary class="section-heading"><h2>Storage and intelligence</h2></summary>
     <section class="service-grid" aria-label="Storage and intelligence">
       <article class="card service-card"><div class="service-heading"><h2>Redis</h2><span id="redis-status" class="service-state">Waiting</span></div><div class="service-rates"><div><span class="label">Reads / sec</span><strong id="redis-reads">—</strong></div><div><span class="label">Writes / sec</span><strong id="redis-writes">—</strong></div></div><span id="redis-totals" class="detail">Waiting for storage counters</span><span id="redis-detail" class="detail"></span></article>
       <article class="card service-card"><div class="service-heading"><h2>MaxMind database</h2><span id="maxmind-status" class="service-state">Waiting</span></div><span class="label">Database file last modified</span><strong id="maxmind-modified" class="file-time">—</strong><span id="maxmind-update" class="detail">Waiting for database status</span><span class="detail">Timestamp comes from the installed file.</span></article>
     </section>
-    <section class="panel hosts-panel" aria-labelledby="hosts-title">
-      <div class="panel-header"><div><h2 id="hosts-title">Host activity</h2><p id="host-count" class="detail">Loading hosts…</p></div><label class="search-label"><span class="sr-only">Search hosts</span><input id="search" type="search" placeholder="Search hosts" maxlength="256" autocomplete="off" spellcheck="false"></label></div>
-      <div class="table-scroll"><table><thead><tr><th scope="col" aria-sort="none"><button type="button" class="host-sort" data-host-sort="hostname">Host<span class="sort-indicator" aria-hidden="true"></span></button></th><th scope="col" aria-sort="none"><button type="button" class="host-sort" data-host-sort="requests">Requests<span class="sort-indicator" aria-hidden="true"></span></button></th><th scope="col" aria-sort="descending"><button type="button" class="host-sort" data-host-sort="rps">Req/Sec<span class="sort-indicator" aria-hidden="true"></span></button></th><th scope="col" aria-sort="none"><button type="button" class="host-sort" data-host-sort="inflight">In flight<span class="sort-indicator" aria-hidden="true"></span></button></th><th scope="col" aria-sort="none"><button type="button" class="host-sort" data-host-sort="rejected">4xx<span class="sort-indicator" aria-hidden="true"></span></button></th><th scope="col" aria-sort="none"><button type="button" class="host-sort" data-host-sort="cve_rejected">CVE blocks<span class="sort-indicator" aria-hidden="true"></span></button></th><th scope="col" aria-sort="none"><button type="button" class="host-sort" data-host-sort="errors_5xx">5xx<span class="sort-indicator" aria-hidden="true"></span></button></th><th scope="col" aria-sort="none"><button type="button" class="host-sort" data-host-sort="ddos">DDoS checkpoint<span class="sort-indicator" aria-hidden="true"></span></button></th></tr></thead><tbody id="hosts"><tr><td colspan="8" class="empty">Waiting for the first sample…</td></tr></tbody></table></div>
-      <div class="table-footer"><span id="updated" class="detail">No sample yet</span><span class="detail">All tracked hosts · no pagination</span></div>
-    </section>
-    <section class="runtime" aria-labelledby="runtime-title"><div class="section-heading"><h2 id="runtime-title">Runtime</h2><span class="detail">Live Go process</span></div><div class="runtime-grid">
+    </details>
+    <details class="panel disks-panel" aria-labelledby="disks-title" open>
+      <summary class="panel-header"><div><h2 id="disks-title">Disk space &amp; mounts</h2><p id="disk-status" class="detail">Loading mounted filesystems…</p></div></summary>
+      <div class="table-scroll"><table><thead><tr><th scope="col">Mount / source</th><th scope="col">Filesystem</th><th scope="col">Total</th><th scope="col">Used</th><th scope="col">Available</th><th scope="col">Usage</th></tr></thead><tbody id="disks"><tr><td colspan="6" class="empty">Waiting for disk information…</td></tr></tbody></table></div>
+    </details>
+    <details class="runtime" aria-labelledby="runtime-title" open><summary class="section-heading"><h2 id="runtime-title">Runtime</h2><span class="detail">Live Go process</span></summary><div class="runtime-grid">
       <article class="metric"><span class="label">Goroutines</span><strong id="goroutines">—</strong></article>
       <article class="metric"><span class="label">Heap allocated</span><strong id="heap">—</strong><span id="heap-inuse" class="detail"></span></article>
       <article class="metric"><span class="label">Runtime memory</span><strong id="system-memory">—</strong><span id="stack" class="detail"></span></article>
       <article class="metric"><span class="label">Uptime</span><strong id="uptime">—</strong></article>
       <article class="metric"><span class="label">GC cycles</span><strong id="gc">—</strong><span id="gc-pause" class="detail"></span></article>
       <article class="metric"><span class="label">CPU parallelism</span><strong id="cpu">—</strong><span class="detail">GOMAXPROCS / logical CPUs</span></article>
-    </div></section>
+    </div></details>
+    </div>
+    <div id="view-logs" role="tabpanel" aria-labelledby="tab-logs" tabindex="0" hidden>
+    <section class="panel logs-panel" aria-labelledby="logs-title">
+      <div class="panel-header"><div><h2 id="logs-title">Service logs</h2><p id="log-status" class="detail" role="status">Latest 100 lines · keeps up to 10,000 lines while open</p></div><button id="show-logs" type="button" aria-expanded="false" aria-controls="log-content">Show logs</button></div>
+      <div id="log-content" hidden><pre id="log-lines" class="log-lines" tabindex="0" aria-label="Service log lines"></pre><p class="log-note detail">Updates every 2 seconds. Scroll to the bottom to follow new lines. Lines over 4 KiB are truncated.</p></div>
+    </section>
+    </div>
+    <div id="view-rules" role="tabpanel" aria-labelledby="tab-rules" tabindex="0" hidden>
+    <section class="panel logs-panel" aria-labelledby="cloudflare-title">
+      <div class="panel-header"><div><h2 id="cloudflare-title">Domain rules</h2><p id="cloudflare-status" class="detail" role="status">Loading domain rules…</p></div></div>
+      <form id="cloudflare-form" class="debug-controls"><label class="search-label" for="cloudflare-hostname">Domain or wildcard<input id="cloudflare-hostname" type="text" placeholder="example.com or *.example.com" maxlength="255" autocomplete="off" spellcheck="false" required></label><label class="search-label" for="rule-type">Rule type<select id="rule-type"><option value="cloudflare">Cloudflare</option></select></label><label class="switch-label"><input id="cloudflare-enabled" type="checkbox" role="switch" checked>Behind Cloudflare</label><button id="cloudflare-save" type="submit">Save rule</button></form>
+      <p class="log-note detail">A plain domain rule includes its www. subdomain by default. Applies to all requests, including firewall checks, debug filtering and upstream client IPs. Settings survive a restart. Headers are trusted only from Cloudflare edges or explicitly configured trusted proxies. Explicit hostname settings override inherited www. settings and wildcards; the most specific wildcard wins.</p>
+      <div id="cloudflare-error" class="error debug-error" role="alert" hidden></div>
+      <div class="table-scroll"><table><thead><tr><th scope="col">Domain pattern</th><th scope="col">Rule</th><th scope="col">Enabled</th></tr></thead><tbody id="cloudflare-hosts"><tr><td colspan="3" class="empty">Loading rules…</td></tr></tbody></table></div>
+    </section>
+    </div>
+    <div id="view-debug" role="tabpanel" aria-labelledby="tab-debug" tabindex="0" hidden>
+    <section class="panel logs-panel" aria-labelledby="debug-title">
+      <div class="panel-header"><div><h2 id="debug-title">Hostname request debug</h2><p id="debug-capture-status" class="detail" role="status">Loading debug status…</p></div><button id="debug-disable" type="button" disabled>Disable debug</button></div>
+      <form id="debug-form" class="debug-controls"><label class="search-label" for="debug-hostname">Hostname or wildcard<input id="debug-hostname" type="text" placeholder="example.com or *.example.com" maxlength="255" autocomplete="off" spellcheck="false" required></label><label class="search-label" for="debug-client-ip">Source IP (optional)<input id="debug-client-ip" type="text" placeholder="All sources, or an IPv4 / IPv6 address" maxlength="45" autocomplete="off" spellcheck="false"></label><button id="debug-enable" type="submit">Enable debug</button></form>
+      <p class="log-note detail">Leave Source IP blank for all sources, or enter one verified client IP to narrow the capture. One capture is shared by all admins. *.example.com matches subdomains at any depth, excluding example.com. Capture continues when this tab is closed and stops when disabled or the service restarts. Full request headers may contain credentials and cookies.</p>
+      <div id="debug-error" class="error debug-error" role="alert" hidden></div>
+      <div id="debug-scroll" class="table-scroll debug-table-scroll" tabindex="0" aria-label="Debug requests"><table class="debug-table"><thead><tr><th scope="col">Time (UTC)</th><th scope="col">Client IP</th><th scope="col">Hostname</th><th scope="col">Method</th><th scope="col">URL</th><th scope="col">Request headers</th></tr></thead><tbody id="debug-rows"></tbody></table></div>
+      <p id="debug-empty" class="log-note detail">Enable a capture rule to see matching requests.</p>
+      <p id="debug-status" class="log-note detail" role="status">Pulls matching requests every 2 seconds · latest 100 initially · retains up to 10,000 rows</p>
+    </section>
+    </div>
+    <div id="view-hosts" role="tabpanel" aria-labelledby="tab-hosts" tabindex="0" hidden>
+    <details class="panel hosts-panel" aria-labelledby="hosts-title" open>
+      <summary class="panel-header"><div><h2 id="hosts-title">Host activity</h2><p id="host-count" class="detail">Loading hosts…</p></div></summary><div class="panel-toolbar"><label class="search-label"><span class="sr-only">Search hosts</span><input id="search" type="search" placeholder="Search hosts" maxlength="256" autocomplete="off" spellcheck="false"></label></div>
+      <div class="table-scroll"><table><thead><tr><th scope="col" aria-sort="none"><button type="button" class="host-sort" data-host-sort="hostname">Host<span class="sort-indicator" aria-hidden="true"></span></button></th><th scope="col" aria-sort="none"><button type="button" class="host-sort" data-host-sort="requests">Requests<span class="sort-indicator" aria-hidden="true"></span></button></th><th scope="col" aria-sort="descending"><button type="button" class="host-sort" data-host-sort="rps">Req/Sec<span class="sort-indicator" aria-hidden="true"></span></button></th><th scope="col" aria-sort="none"><button type="button" class="host-sort" data-host-sort="inflight">In flight<span class="sort-indicator" aria-hidden="true"></span></button></th><th scope="col" aria-sort="none"><button type="button" class="host-sort" data-host-sort="rejected">4xx<span class="sort-indicator" aria-hidden="true"></span></button></th><th scope="col" aria-sort="none"><button type="button" class="host-sort" data-host-sort="cve_rejected">CVE blocks<span class="sort-indicator" aria-hidden="true"></span></button></th><th scope="col" aria-sort="none"><button type="button" class="host-sort" data-host-sort="errors_5xx">5xx<span class="sort-indicator" aria-hidden="true"></span></button></th><th scope="col" aria-sort="none"><button type="button" class="host-sort" data-host-sort="ddos">DDoS checkpoint<span class="sort-indicator" aria-hidden="true"></span></button></th></tr></thead><tbody id="hosts"><tr><td colspan="8" class="empty">Waiting for the first sample…</td></tr></tbody></table></div>
+      <div class="table-footer"><span id="updated" class="detail">No sample yet</span><span class="detail">All tracked hosts · no pagination</span></div>
+    </details>
+
+    </div>
     <footer class="page-footer"><span id="capacity">Bounded host tracking</span><span>Admin requests are excluded from traffic totals.</span></footer>
   </main>
 </body>

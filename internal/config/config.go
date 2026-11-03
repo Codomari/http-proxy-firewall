@@ -116,6 +116,7 @@ func (r *environment) applyFirewall(settings *Firewall) {
 	settings.AllowedCountries = r.csv("IP_FILTER_ALLOWED_COUNTRIES")
 	settings.TrustedProxies = r.csv("PF_TRUSTED_PROXIES")
 	settings.TrustCloudflareHeader = r.boolean("PF_TRUST_CLOUDFLARE_HEADER", false)
+	settings.CloudflareHostsFile = r.text("PF_CLOUDFLARE_HOSTS_FILE", settings.CloudflareHostsFile)
 	threshold := r.int64("DOS_DETECTOR_HOSTNAME_REQUEST_THRESHOLD", int64(settings.RequestThreshold))
 	if threshold <= 0 {
 		r.errs = append(r.errs, errors.New("DOS_DETECTOR_HOSTNAME_REQUEST_THRESHOLD must be positive"))

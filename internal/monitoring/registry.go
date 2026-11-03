@@ -78,6 +78,7 @@ type Registry struct {
 	totals    counters
 	untracked atomic.Uint64
 	resources resourceSampler
+	disks     diskSampler
 }
 
 func New(cfg config.Config) *Registry {

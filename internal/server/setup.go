@@ -54,6 +54,7 @@ func (s *Server) configureRoutes(engine *firewall.Engine, upstream *proxy.Handle
 		s.configureACME()
 	}
 	s.adminUI.Mount(s.app)
+	s.app.Use(s.adminUI.DebugMiddleware(engine.ResolveClientIP))
 	if s.cfg.Observability.Metrics {
 		monitor := observability.New()
 		monitor.Mount(s.app)

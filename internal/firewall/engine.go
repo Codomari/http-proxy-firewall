@@ -5,6 +5,7 @@ package firewall
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"math"
@@ -34,6 +35,7 @@ type Engine struct {
 	trustedProxies   []netip.Prefix
 	allowedCountries map[string]struct{}
 	trustCloudflare  bool
+	cloudflare       cloudflareSettings
 	intelligence     Intelligence
 	sessions         *session.Service
 	logger           *slog.Logger
@@ -98,7 +100,7 @@ func New(cfg config.Config, intelligence Intelligence, sessions *session.Service
 		}
 		countries[country] = struct{}{}
 	}
-	return &Engine{
+	e := &Engine{
 		limits:      cve2026109618.Limits{MaxBodyBytes: f.MaxBodyBytes},
 		uploadNames: append([]string(nil), f.UploadProgressNames...),
 		whitelist:   whitelist, trustedProxies: trusted, allowedCountries: countries,
@@ -109,12 +111,15 @@ func New(cfg config.Config, intelligence Intelligence, sessions *session.Service
 		detector:      detector{hosts: cache.New[string, hostWindow](f.CacheCapacity), window: f.SamplingWindow, penalty: f.PenaltyLifetime, threshold: f.RequestThreshold},
 		now:           time.Now,
 		trackInput:    cfg.Admin.Enabled,
-	}, nil
+	}
+	if err := e.cloudflare.load(f.CloudflareHostsFile); err != nil {
+		return nil, fmt.Errorf("load Cloudflare hostname settings: %w", err)
+	}
+	return e, nil
 }
 
 func (e *Engine) Handler(c fiber.Ctx) error {
-	address := e.resolveClient(c)
-	c.Locals(clientIPKey{}, address.String())
+	address := e.clientAddress(c)
 	// Always keep body validation first, including static files, whitelisted
 	// clients, accepted cookies, and search engine ranges.
 	release, err := e.inspect(c)

@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.2.0
+
+### Added
+
+- Live Debug request table with timestamp, source IP, hostname, method, raw URL and expandable headers, continuous cursor-based polling, retry after read errors and capture-specific history.
+- Debug tab with exact/wildcard hostname and optional source IPv4/IPv6 capture, immediate disable, protected live viewing, and private sanitized log files containing ISO timestamps, verified client IPs, methods, raw URLs and request headers, including firewall and admission rejections.
+- Separate Rules tab for adding per-domain or wildcard rules, with Cloudflare as the first supported rule type and independent rule polling.
+- Plain domain rules also cover their `www.` subdomain by default; an explicit `www.` hostname rule takes precedence.
+- Persistent per-host Behind Cloudflare switches that apply to all requests, with exact/wildcard precedence, Cloudflare edge verification, spoof protection and consistent client IPs for firewall, debug filtering and upstream forwarding.
+- Expandable Service logs viewer in the Logs tab: initially loads the latest 100 complete log lines, follows appended lines every two seconds, and retains up to 10,000 lines in the browser.
+- Authenticated, bounded log reads with replacement and truncation detection, plain text rendering, and scroll position preservation.
+- Disk space and mounts table with filesystem, source, read-only status, total, used, available space, and usage percentage on Linux and macOS.
+- Collapsible dashboard sections for traffic, CPU/RAM, services, disks, Runtime and Host activity, alongside the Show/Hide logs control.
+- Separate Monitoring, Logs, Rules, Debug and Host Activity tabs with keyboard navigation; polling for logs, rules and debug pauses outside its corresponding tab.
+
+### Changed
+
+- Move Runtime into the Monitoring tab, before the separate Logs view.
+
 ## 0.1.5
 
 ### Changed

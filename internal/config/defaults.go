@@ -24,6 +24,7 @@ func Defaults() Config {
 			RequestThreshold:  200, SamplingWindow: 10 * time.Second, PenaltyLifetime: 10 * time.Minute,
 			CookieLifetime: 24 * time.Hour, CacheCapacity: 100000,
 			RejectionLogInterval: time.Second,
+			CloudflareHostsFile:  "files/cloudflare-hosts.json",
 		},
 		Redis: Redis{Address: "redis:6379", Timeout: 250 * time.Millisecond, QueueSize: 1024, Workers: 4},
 		Intelligence: Intelligence{

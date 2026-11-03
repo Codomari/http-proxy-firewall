@@ -15,10 +15,27 @@ type clientIPKey struct{}
 // ClientIP is the address verified by this firewall's proxy trust policy.
 // Values kept in Locals own their storage and are valid through this handler.
 func ClientIP(c fiber.Ctx) string {
-	if ip, ok := c.Locals(clientIPKey{}).(string); ok {
-		return ip
+	if ip, ok := c.Locals(clientIPKey{}).(netip.Addr); ok {
+		return ip.String()
 	}
 	return c.RequestCtx().RemoteIP().String()
+}
+
+// ResolveClientIP applies the same proxy trust policy before firewall admission,
+// allowing debug logging to include requests that admission or inspection rejects.
+func (e *Engine) ResolveClientIP(c fiber.Ctx) string {
+	return e.clientAddress(c).String()
+}
+
+// Resolve once so changing a hostname setting during a request cannot make
+// debug filtering, firewall decisions and upstream forwarding disagree.
+func (e *Engine) clientAddress(c fiber.Ctx) netip.Addr {
+	if address, ok := c.Locals(clientIPKey{}).(netip.Addr); ok {
+		return address
+	}
+	address := e.resolveClient(c)
+	c.Locals(clientIPKey{}, address)
+	return address
 }
 
 func normalizeHostname(raw string) (string, error) {
@@ -103,12 +120,19 @@ func containsAddress(prefixes []netip.Prefix, address netip.Addr) bool {
 func (e *Engine) resolveClient(c fiber.Ctx) netip.Addr {
 	peer, _ := netip.AddrFromSlice(c.RequestCtx().RemoteIP())
 	peer = peer.Unmap()
+	behindCloudflare, configured := e.cloudflare.match(string(c.Request().Header.Host()))
+	if behindCloudflare && containsAddress(cloudflareNetworks, peer) {
+		if address, ok := cloudflareClient(c); ok {
+			return address
+		}
+		return peer
+	}
 	if !containsAddress(e.trustedProxies, peer) {
 		return peer
 	}
-	if e.trustCloudflare {
-		if ip, err := netip.ParseAddr(strings.TrimSpace(c.Get("CF-Connecting-IP"))); err == nil {
-			return ip.Unmap()
+	if behindCloudflare || e.trustCloudflare && !configured {
+		if address, ok := cloudflareClient(c); ok {
+			return address
 		}
 	}
 	values := c.Request().Header.PeekAll("X-Forwarded-For")

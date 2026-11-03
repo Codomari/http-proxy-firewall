@@ -48,13 +48,16 @@ type credentialHashes struct {
 }
 
 type Handler struct {
-	basePath  string
-	enabled   bool
-	accounts  []credentialHashes
-	registry  *monitoring.Registry
-	penalties PenaltySource
-	services  ServiceSources
-	assets    map[string][]byte
+	basePath   string
+	enabled    bool
+	accounts   []credentialHashes
+	registry   *monitoring.Registry
+	penalties  PenaltySource
+	services   ServiceSources
+	assets     map[string][]byte
+	logs       logTail
+	debug      debugLog
+	cloudflare cloudflareSource
 }
 
 func New(cfg config.Config, registry *monitoring.Registry, penalties PenaltySource, logger *slog.Logger, services ...ServiceSources) (*Handler, error) {
@@ -69,6 +72,9 @@ func New(cfg config.Config, registry *monitoring.Registry, penalties PenaltySour
 		return nil, errors.New("enabled admin requires a monitoring registry")
 	}
 	h := &Handler{basePath: basePath, enabled: cfg.Admin.Enabled, registry: registry, penalties: penalties, assets: make(map[string][]byte, 4)}
+	h.logs.path = "log/proxy-firewall.log"
+	h.debug.dir = "log"
+	h.cloudflare, _ = penalties.(cloudflareSource)
 	for _, account := range cfg.Admin.Accounts {
 		if account.User == "" || account.Password == "" {
 			return nil, errors.New("admin accounts require both user and password")
@@ -175,6 +181,12 @@ func (h *Handler) serve(c fiber.Ctx, requestPath string) error {
 		c.Set("WWW-Authenticate", `Basic realm="Proxy firewall admin", charset="UTF-8"`)
 		return c.Status(fiber.StatusUnauthorized).SendString("Authentication required")
 	}
+	if requestPath == h.basePath+"/api/debug" {
+		return h.serveDebug(c)
+	}
+	if requestPath == h.basePath+"/api/cloudflare-hosts" {
+		return h.serveCloudflare(c)
+	}
 	if c.Method() != fiber.MethodGet && c.Method() != fiber.MethodHead {
 		c.Set("Allow", "GET, HEAD")
 		return c.SendStatus(fiber.StatusMethodNotAllowed)
@@ -197,7 +209,15 @@ func (h *Handler) serve(c fiber.Ctx, requestPath string) error {
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid host search"})
 		}
-		return c.JSON(fiber.Map{"timestamp": time.Now().UTC(), "totals": h.registry.Totals(), "runtime": h.registry.Runtime(), "hosts": list.Hosts, "host_count": list.Total, "services": h.serviceStatus()})
+		return c.JSON(fiber.Map{"timestamp": time.Now().UTC(), "totals": h.registry.Totals(), "runtime": h.registry.Runtime(), "hosts": list.Hosts, "host_count": list.Total, "services": h.serviceStatus(), "disks": h.registry.Disks()})
+	case h.basePath + "/api/logs":
+		result, err := h.logs.read(c.Query("cursor"))
+		if err != nil {
+			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "Log file is unavailable. Expected log/proxy-firewall.log in the service working directory."})
+		}
+		return c.JSON(result)
+	case h.basePath + "/api/debug/logs":
+		return h.serveDebugLogs(c)
 	case h.basePath + "/api/hosts":
 		list, err := h.hosts(c)
 		if err != nil {

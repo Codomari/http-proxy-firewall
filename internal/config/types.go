@@ -52,6 +52,7 @@ type Firewall struct {
 	AllowedCountries      []string
 	TrustedProxies        []string
 	TrustCloudflareHeader bool
+	CloudflareHostsFile   string
 	RequestThreshold      uint64
 	SamplingWindow        time.Duration
 	PenaltyLifetime       time.Duration
