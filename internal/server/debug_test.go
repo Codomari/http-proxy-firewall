@@ -199,6 +199,7 @@ func TestDebugCapturesCompletedStreamsAndUpgradeDenials(t *testing.T) {
 			body := "<script>first</script>\n" + strings.Repeat("x", observability.ResponsePreviewLimit) + "last"
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Server", "origin-server")
+				w.Header().Set("Content-Type", "application/json")
 				w.Header().Add("Set-Cookie", "one=1")
 				w.Header().Add("Set-Cookie", "two=2")
 				if upgrade {

@@ -44,6 +44,7 @@ func TestResponseCaptureBufferedPreviewAndBodylessResponses(t *testing.T) {
 			app.Use(func(c fiber.Ctx) error {
 				c.Response().Header.Add("Set-Cookie", "one=1")
 				c.Response().Header.Add("Set-Cookie", "two=2")
+				c.Set("Content-Type", "application/json; charset=utf-8")
 				return c.Status(tc.status).SendString(tc.body)
 			})
 			response, err := app.Test(httptest.NewRequest(tc.method, "http://example.com/", nil))
@@ -118,6 +119,7 @@ func TestResponseCaptureStreamWaitsForCloseAndPreservesWriteErrors(t *testing.T)
 	source := &captureTestStream{Reader: bytes.NewReader(data)}
 	stream := WrapResponseStream(c, source)
 	c.Status(202)
+	c.Set("Content-Type", "application/json")
 	c.Response().SetBodyStream(stream, len(data))
 	capture.Prepare(c)
 	// Snapshot data must remain valid after pooled headers are reused.

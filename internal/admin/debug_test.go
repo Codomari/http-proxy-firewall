@@ -294,7 +294,7 @@ func TestDebugCapturesFinalErrorHandlerResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 	entry := parseDebugEntry(strings.TrimSpace(string(data)))
-	if calls != 1 || response.StatusCode != 502 || string(body) != "upstream unavailable" || entry.Response == nil || entry.Response.Status != 502 || entry.Response.Body != string(body) {
+	if calls != 1 || response.StatusCode != 502 || string(body) != "upstream unavailable" || entry.Response == nil || entry.Response.Status != 502 || entry.Response.Body != "" || entry.Response.BodyOmitted != "Response Content-Type is not application/json" {
 		t.Fatalf("final error response changed or was not captured: calls=%d entry=%+v", calls, entry)
 	}
 }

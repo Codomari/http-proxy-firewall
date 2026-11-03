@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"io"
+	"mime"
 	"strings"
 	"sync"
 	"time"
@@ -43,6 +44,7 @@ type ResponseCapture struct {
 	started                    time.Time
 	streamed, prepared, closed bool
 	finished                   bool
+	jsonBody                   bool
 	preview                    []byte
 	response                   CapturedResponse
 	finish                     func(time.Duration, CapturedResponse)
@@ -73,6 +75,8 @@ func (capture *ResponseCapture) Prepare(c fiber.Ctx) {
 	capture.mu.Lock()
 	defer capture.mu.Unlock()
 	capture.response.Status = c.Response().StatusCode()
+	mediaType, _, err := mime.ParseMediaType(string(c.Response().Header.ContentType()))
+	capture.jsonBody = err == nil && strings.EqualFold(mediaType, "application/json")
 	capture.response.Headers = []CapturedHeader{}
 	buffered := !c.Response().IsBodyStream()
 	bodyAllowed := capture.response.Status >= 200 && capture.response.Status != 204 && capture.response.Status != 304
@@ -106,6 +110,9 @@ func (capture *ResponseCapture) Prepare(c fiber.Ctx) {
 
 func (capture *ResponseCapture) record(data []byte) {
 	capture.response.Bytes += uint64(len(data))
+	if !capture.jsonBody {
+		return
+	}
 	capture.preview = append(capture.preview, data[:min(len(data), ResponsePreviewLimit-len(capture.preview))]...)
 }
 
@@ -117,6 +124,12 @@ func (capture *ResponseCapture) complete() {
 	capture.finished = true
 	capture.response.BodyTruncated = capture.response.Bytes > uint64(len(capture.preview))
 	capture.response.BodyEncoding = "utf-8"
+	if !capture.jsonBody {
+		capture.response.BodyOmitted = "Response Content-Type is not application/json"
+		capture.response.BodyTruncated = false
+		capture.finish(time.Since(capture.started), capture.response)
+		return
+	}
 	text := utf8.Valid(capture.preview)
 	for _, b := range capture.preview {
 		if b < 0x20 && b != '\n' && b != '\r' && b != '\t' || b == 0x7f {

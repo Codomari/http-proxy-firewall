@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.11
+
+### Added
+
+- Debug request-body capture with a 4 KiB limit before base64 encoding and frontend decoding in the existing body dialog. Oversized, incomplete and unread bodies have explicit omission reasons; streamed uploads are observed during firewall inspection without additional reads or buffering.
+
+### Changed
+
+- Capture response bodies only for `application/json`, including media-type parameters such as `charset=utf-8`. Other responses retain headers, status and byte counts with an omission reason, and older non-JSON body captures are hidden in the viewer.
+
 ## 0.3.9
 
 ### Changed

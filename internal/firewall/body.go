@@ -16,6 +16,7 @@ import (
 	cve2026109618 "http-proxy-firewall/internal/firewall/cves/2026-109618"
 	cve2026109619 "http-proxy-firewall/internal/firewall/cves/2026-109619"
 	"http-proxy-firewall/internal/monitoring"
+	"http-proxy-firewall/internal/observability"
 )
 
 // inspect returns a cleanup function that must span c.Next. On rejection it
@@ -75,6 +76,7 @@ func (e *Engine) inspect(c fiber.Ctx) (func(), error) {
 	} else {
 		body = req.Body()
 	}
+	observability.RecordRequestBody(c, body, err == nil && (length < 0 || length == int64(len(body))) && int64(len(body)) <= e.limits.MaxBodyBytes)
 	if e.trackInput && len(body) > 0 {
 		monitoring.AddBytesIn(c, uint64(len(body)))
 	}

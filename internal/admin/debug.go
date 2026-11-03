@@ -33,20 +33,22 @@ type debugStatus struct {
 type debugHeader = observability.CapturedHeader
 
 type debugResult struct {
-	DurationMS float64                        `json:"duration_ms"`
-	Response   observability.CapturedResponse `json:"response"`
+	DurationMS float64                            `json:"duration_ms"`
+	Request    *observability.CapturedRequestBody `json:"request,omitempty"`
+	Response   observability.CapturedResponse     `json:"response"`
 }
 
 type debugEntry struct {
-	Timestamp  string                          `json:"timestamp"`
-	ClientIP   string                          `json:"client_ip"`
-	Hostname   string                          `json:"hostname"`
-	Method     string                          `json:"method"`
-	URL        string                          `json:"url"`
-	Headers    []debugHeader                   `json:"headers"`
-	Raw        *string                         `json:"raw,omitempty"`
-	DurationMS *float64                        `json:"duration_ms,omitempty"`
-	Response   *observability.CapturedResponse `json:"response,omitempty"`
+	Timestamp  string                             `json:"timestamp"`
+	ClientIP   string                             `json:"client_ip"`
+	Hostname   string                             `json:"hostname"`
+	Method     string                             `json:"method"`
+	URL        string                             `json:"url"`
+	Headers    []debugHeader                      `json:"headers"`
+	Request    *observability.CapturedRequestBody `json:"request,omitempty"`
+	Raw        *string                            `json:"raw,omitempty"`
+	DurationMS *float64                           `json:"duration_ms,omitempty"`
+	Response   *observability.CapturedResponse    `json:"response,omitempty"`
 }
 
 type debugBatch struct {
@@ -125,7 +127,10 @@ func parseDebugEntry(line string) debugEntry {
 		if !ok || json.Unmarshal([]byte(payload), &result) != nil || result.DurationMS < 0 || result.Response.Status < 100 || result.Response.Status > 599 || result.Response.Headers == nil || (result.Response.BodyEncoding != "utf-8" && result.Response.BodyEncoding != "base64") {
 			return fallback
 		}
-		entry.DurationMS, entry.Response = &result.DurationMS, &result.Response
+		if result.Request != nil && result.Request.BodyEncoding != "base64" {
+			return fallback
+		}
+		entry.DurationMS, entry.Request, entry.Response = &result.DurationMS, result.Request, &result.Response
 	}
 	return entry
 }
@@ -353,8 +358,9 @@ func (h *Handler) DebugMiddleware(clientIP func(fiber.Ctx) string) fiber.Handler
 		if len(tails) == 0 {
 			return c.Next()
 		}
+		request := observability.CaptureRequestBody(c)
 		capture := observability.CaptureResponse(c, started, func(duration time.Duration, response observability.CapturedResponse) {
-			result, err := json.Marshal(debugResult{DurationMS: float64(duration) / float64(time.Millisecond), Response: response})
+			result, err := json.Marshal(debugResult{DurationMS: float64(duration) / float64(time.Millisecond), Request: request, Response: response})
 			if err == nil {
 				for _, tail := range tails {
 					h.debug.append(tail, line+" | "+string(result)+"\n")

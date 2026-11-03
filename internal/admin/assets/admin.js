@@ -215,8 +215,9 @@
     } else text("log-status", "Latest 100 lines · keeps up to 10,000 lines while open");
   });
   const debug = {hostname: "", clientIP: "", file: "", enabled: false, cursor: "", limited: false, unparsed: false, timer: null, controller: null, busy: false};
-  const bodyOmission = (result) => result.body_omitted || (result.body_encoding === "base64" && result.bytes > 4096 ? "Binary body exceeds the 4 KiB capture limit" : "");
   const responseHeader = (result, name) => result.headers.filter(header => header.name.toLowerCase() === name).map(header => header.value).join(", ");
+  const bodyOmission = (result, kind = "response") => result.body_omitted || (kind === "response" && !/^application\/json\s*(?:;|$)/i.test(responseHeader(result, "content-type").trim()) ? "Response Content-Type is not application/json" : "") || ((kind === "request" || result.body_encoding === "base64") && result.bytes > 4096 ? "Body exceeds the 4 KiB capture limit" : "");
+  const bodySize = (result) => result.bytes_known === false ? result.bytes ? `at least ${bytes(result.bytes)}` : "size unknown" : bytes(result.bytes);
   let bodyViewVersion = 0;
   function hexBody(data) {
     const lines = [];
@@ -253,9 +254,13 @@
     }
     return data;
   }
-  async function showDebugBody(entry) {
-    const result = entry.response, dialog = byId("debug-body-dialog"), version = ++bodyViewVersion;
-    const meta = [`HTTP ${result.status}`, responseHeader(result, "content-type") || "Unknown content type", `${bytes(result.bytes)} response`];
+  async function showDebugBody(entry, kind) {
+    const result = kind === "request" ? {...entry.request, headers: entry.headers} : entry.response;
+    const dialog = byId("debug-body-dialog"), version = ++bodyViewVersion;
+    const meta = [kind === "request" ? "Request" : `HTTP ${result.status}`, responseHeader(result, "content-type") || "Unknown content type", `${bodySize(result)} ${kind}`];
+    text("debug-body-eyebrow", `Debug / ${kind === "request" ? "Request" : "Response"}`);
+    text("debug-body-title", kind === "request" ? "Request body" : "Response body");
+    byId("debug-body-content").setAttribute("aria-label", `Decoded ${kind} body`);
     text("debug-body-request", `${entry.method} ${entry.hostname}${entry.url}`);
     text("debug-body-meta", meta.join(" · "));
     text("debug-body-note", "Decoding captured body…");
@@ -263,11 +268,13 @@
     dialog.showModal();
     let content = result.body || "", format = "Text", note = result.body_truncated ? "Showing the captured preview, up to 16 KiB." : "";
     try {
-      const omitted = bodyOmission(result);
+      const omitted = bodyOmission(result, kind);
       if (omitted) throw new Error(omitted);
       const encoding = responseHeader(result, "content-encoding");
       if (result.body_encoding === "base64" || encoding) {
+        if (result.body_encoding === "base64" && content.length > Math.ceil(4096 / 3) * 4) throw new Error("Base64 body exceeds the 4 KiB capture limit");
         let data = result.body_encoding === "base64" ? Uint8Array.from(atob(content), value => value.charCodeAt(0)) : new TextEncoder().encode(content);
+        if (result.body_encoding === "base64" && data.length > 4096) throw new Error("Decoded base64 body exceeds the 4 KiB capture limit");
         if (encoding) {
           try {
             data = await decompressBody(data, encoding);
@@ -302,6 +309,24 @@
   byId("debug-body-close").addEventListener("click", () => bodyDialog.close());
   bodyDialog.addEventListener("click", event => { if (event.target === bodyDialog) bodyDialog.close(); });
   bodyDialog.addEventListener("close", () => { bodyViewVersion++; text("debug-body-content", ""); });
+  function appendDebugBody(container, entry, kind) {
+    const result = kind === "request" ? {...entry.request, headers: entry.headers} : entry.response;
+    const omitted = bodyOmission(result, kind);
+    if (omitted) {
+      const notice = document.createElement("p");
+      notice.className = "debug-body-omitted detail";
+      notice.textContent = `${bodySize(result)} body · ${omitted}`;
+      container.appendChild(notice);
+    } else {
+      const link = document.createElement("button");
+      link.type = "button"; link.className = "debug-body-link";
+      link.textContent = `View body · ${bodySize(result)}${result.body_truncated ? " · preview" : ""}`;
+      link.setAttribute("aria-haspopup", "dialog");
+      link.setAttribute("aria-controls", "debug-body-dialog");
+      link.addEventListener("click", () => showDebugBody(entry, kind));
+      container.appendChild(link);
+    }
+  }
   function appendDebug(data) {
     const body = byId("debug-rows"), view = byId("debug-scroll");
     const follow = body.childElementCount === 0 || view.scrollHeight - view.scrollTop - view.clientHeight < 40;
@@ -322,28 +347,14 @@
         summary.textContent = `${number.format(entry.headers.length)} headers`;
         values.textContent = entry.headers.map(header => `${header.name}: ${header.value}`).join("\n");
         details.appendChild(summary); details.appendChild(values); headers.appendChild(details);
+        if (entry.request) appendDebugBody(headers, entry, "request");
         const response = cell(row, "");
         if (entry.response) {
           const result = entry.response, details = document.createElement("details"), summary = document.createElement("summary"), values = document.createElement("pre");
           summary.textContent = `${number.format(result.headers.length)} headers${result.error ? " · transfer failed" : ""}`;
           values.textContent = result.headers.map(header => `${header.name}: ${header.value}`).join("\n") + (result.error ? `\n\nTransfer error: ${result.error}` : "");
           details.appendChild(summary); details.appendChild(values); response.appendChild(details);
-          const omitted = bodyOmission(result);
-          if (omitted) {
-            const notice = document.createElement("p");
-            notice.className = "debug-body-omitted detail";
-            notice.textContent = `${bytes(result.bytes)} body · omitted (over 4 KiB)`;
-            notice.title = omitted;
-            response.appendChild(notice);
-          } else {
-            const link = document.createElement("button");
-            link.type = "button"; link.className = "debug-body-link";
-            link.textContent = `View body · ${bytes(result.bytes)}${result.body_truncated ? " · preview" : ""}`;
-            link.setAttribute("aria-haspopup", "dialog");
-            link.setAttribute("aria-controls", "debug-body-dialog");
-            link.addEventListener("click", () => showDebugBody(entry));
-            response.appendChild(link);
-          }
+          appendDebugBody(response, entry, "response");
         } else response.textContent = "—";
       }
       fragment.appendChild(row);
