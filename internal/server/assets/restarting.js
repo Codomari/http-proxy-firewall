@@ -2,8 +2,7 @@
   "use strict";
   const countdown = document.getElementById("countdown");
   const status = document.getElementById("restart-status");
-  const unavailable = new Set([540, 502, 503, 504]);
-  let remaining = 3, checking = false;
+  let remaining = 3, checking = false, navigating = false;
 
   function render() {
     countdown.textContent = String(remaining);
@@ -11,7 +10,7 @@
   }
 
   async function retry() {
-    if (checking) return;
+    if (checking || navigating) return;
     checking = true;
     remaining = 0;
     render();
@@ -21,22 +20,27 @@
       // Probe without replaying a form submission or downloading a full page.
       // Keep this screen visible through connection failures during restart.
       const response = await fetch(window.location.href, {method: "HEAD", cache: "no-store", credentials: "same-origin", redirect: "manual", signal: controller.signal});
-      if (response.type === "opaqueredirect" || response.status > 0 && !unavailable.has(response.status)) {
+      if (response.type === "opaqueredirect" || response.status >= 200 && response.status < 400) {
         window.location.replace(window.location.href);
+        navigating = true;
+        clearInterval(timer);
         return;
       }
     } catch (_) {
       // The listener may be closed until the new process has started.
     } finally {
       clearTimeout(timeout);
-      checking = false;
-      remaining = 3;
-      render();
+      if (navigating) status.textContent = "Server is ready. Opening page…";
+      else {
+        checking = false;
+        remaining = 3;
+        render();
+      }
     }
   }
 
-  setInterval(() => {
-    if (checking) return;
+  const timer = setInterval(() => {
+    if (checking || navigating) return;
     remaining--;
     if (remaining <= 0) retry();
     else render();

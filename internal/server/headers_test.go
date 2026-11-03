@@ -11,10 +11,15 @@ import (
 	"testing"
 	"time"
 
+	buildinfo "http-proxy-firewall"
+
 	"http-proxy-firewall/internal/config"
 )
 
 func TestServerHeaderForProxyAdminAndRejections(t *testing.T) {
+	if config.ServerName != "codomari/proxy-firewall/"+buildinfo.Version {
+		t.Fatal("Server header does not include the embedded version")
+	}
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Server", "nginx")
 		w.Header().Add("Server", "another-upstream")

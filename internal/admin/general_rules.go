@@ -3,16 +3,12 @@ package admin
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"io"
 	"mime"
-	"os"
-	"path/filepath"
 
 	"http-proxy-firewall/internal/config"
 
 	"github.com/gofiber/fiber/v3"
-	"github.com/joho/godotenv"
 )
 
 type generalRulesSource interface {
@@ -30,18 +26,7 @@ func (h *Handler) generalRulesSnapshot() (generalRulesSnapshot, error) {
 	if err != nil {
 		return generalRulesSnapshot{}, err
 	}
-	result := generalRulesSnapshot{GeneralRules: rules, Available: h.general != nil, Overrides: []string{}}
-	values, err := godotenv.Read(filepath.Join(filepath.Dir(h.generalFile.Path), "proxy-firewall.conf"))
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return generalRulesSnapshot{}, errors.New("unable to check startup overrides")
-	}
-	for _, key := range []string{"IP_FILTER_WHITELIST", "IP_FILTER_WHITELIST_NETWORKS", "IP_FILTER_ALLOWED_COUNTRIES", "IP_FILTER_WHITELIST_CHECKPOINT", "IP_FILTER_COUNTRIES_CHECKPOINT", "DOS_DETECTOR_HOSTNAME_REQUEST_THRESHOLD"} {
-		_, fromFile := values[key]
-		_, fromProcess := os.LookupEnv(key)
-		if fromFile || fromProcess {
-			result.Overrides = append(result.Overrides, key)
-		}
-	}
+	result := generalRulesSnapshot{GeneralRules: rules, Available: h.general != nil, Overrides: h.generalFile.ProcessOverrides()}
 	return result, nil
 }
 
@@ -94,14 +79,14 @@ func (h *Handler) serveGeneralRules(c fiber.Ctx) error {
 		h.generalMu.Lock()
 		defer h.generalMu.Unlock()
 		if err := h.generalFile.Save(rules); err != nil {
-			return c.Status(503).JSON(fiber.Map{"error": "Unable to save .env. Check file and directory permissions, dotenv syntax and disk space; reload before retrying."})
+			return c.Status(503).JSON(fiber.Map{"error": "Unable to save override YAML. Check file and directory permissions, YAML syntax and disk space; reload before retrying."})
 		}
 		if err := h.general.SetGeneralRules(rules); err != nil {
-			return c.Status(503).JSON(fiber.Map{"error": "Settings saved to .env; restart the service to apply them"})
+			return c.Status(503).JSON(fiber.Map{"error": "Settings saved to override YAML; restart the service to apply them"})
 		}
 		result, err := h.generalRulesSnapshot()
 		if err != nil {
-			return c.Status(503).JSON(fiber.Map{"error": "Settings saved, but unable to reload the .env settings"})
+			return c.Status(503).JSON(fiber.Map{"error": "Settings saved, but unable to reload the override YAML"})
 		}
 		return c.JSON(result)
 	}
@@ -109,7 +94,7 @@ func (h *Handler) serveGeneralRules(c fiber.Ctx) error {
 	defer h.generalMu.Unlock()
 	result, err := h.generalRulesSnapshot()
 	if err != nil {
-		return c.Status(503).JSON(fiber.Map{"error": "Unable to read general settings. Check .env permissions and dotenv syntax."})
+		return c.Status(503).JSON(fiber.Map{"error": "Unable to read general settings. Check configuration YAML permissions and syntax."})
 	}
 	return c.JSON(result)
 }

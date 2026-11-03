@@ -9,11 +9,11 @@ The Go load tool also rejects public IPs and arbitrary internet hostnames.
 ./bench/run.sh
 ```
 
-The default matrix uses HTTP and HTTPS, GET and URL-encoded forms, concurrency
+The default matrix uses HTTP and HTTPS, GET, URL-encoded forms and 20-field multipart forms, concurrency
 64/256/1024, 15-second measurements, 2-second warmup, and three repetitions. It
 also calibrates the direct backend, checks all four rejection workloads, runs a
 15% malicious mixed workload, and checks a 50 ms upstream. The matrix takes
-approximately 12 minutes. Optional `SOAK=1` adds a 60-second HTTPS run;
+approximately 18 minutes at the default settings. Optional `SOAK=1` adds a 60-second HTTPS run;
 `OVERLOAD=1` adds a 4096-worker run that may correctly report admission failures.
 
 For a shorter first pass:
@@ -34,14 +34,14 @@ sequences are removed before parsing JSON. The wrapper fails if it records no
 resource samples. A standalone resource sampler is available with
 `python3 bench/measure.py --collect-only --seconds 60`.
 
-Summarize completed results with `python3 bench/summarize.py bench/results/final`.
+Summarize completed results with `python3 bench/summarize.py bench/results/v0.3.4`.
 It separates direct-backend traffic, preserves failure counts, and reports sample
 coverage. `python3 bench/profile.py` captures CPU/allocation profiles during a
 separate coordinated HTTP run against already-running benchmark containers.
 
 `DURATION`, `WARMUP`, `REPEATS`, `CONCURRENCIES`, `SCHEMES`, `WORKLOADS`,
 `REJECT_DURATION`, `BENCH_RESULTS_DIR`, `NO_BUILD`, `SLOW`, `SOAK`, and `OVERLOAD`
-are configurable. Results are retained in `bench/results` by default. Each case
+are configurable. Results are retained in `bench/results/v0.3.4` by default. Each case
 writes JSON even when measured requests fail; `exits.tsv` records exit status.
 Warmup failure produces an error instead of a misleading measurement artifact.
 
@@ -60,8 +60,7 @@ extension. The country allowlist is empty, so country lookup is skipped; no loca
 GeoIP database is supplied. Explicit-IP bypasses are disabled for Docker clients.
 Google ranges, live intelligence refresh, and Redis are disabled. These runs do
 not measure classification with populated GeoIP/Google datasets, country caching,
-Redis operations, or refresh jobs. This classifier configuration stays unchanged
-between the initial and tuned primary measurements.
+Redis operations, or refresh jobs. The release matrix measures the current configuration; old result sets are removed before recording a replacement report.
 The final measurement enables the embedded admin interface with disposable example
 credentials from `.creds.example`. The measurement wrapper polls its overview API every two seconds and
 records responses in `admin-samples.jsonl`, exercising monitoring during load.
@@ -124,8 +123,7 @@ The benchmark executable has `upstream`, `load`, `cert`, and `check` subcommands
 The optional `--workload multipart` sends 20 legitimate regular form fields whose
 values total `--form-bytes` bytes (1024 by default), with complete MIME framing.
 It requires status 200 and the origin marker, exercising the strict multipart
-inspection path. It is available for focused runs without extending the default
-GET/URL-encoded matrix; for example set `WORKLOADS=multipart CONCURRENCIES='64 256'`.
+inspection path. It is included in the default matrix and also supports focused runs; for example set `WORKLOADS=multipart CONCURRENCIES='64 256'`.
 
 If image-registry access prevents the normal build, compile the stdlib-only load
 tool with the host Go toolchain, setting the Docker VM architecture explicitly:

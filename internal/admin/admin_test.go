@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	buildinfo "http-proxy-firewall"
+
 	"github.com/gofiber/fiber/v3"
 	"github.com/valyala/fasthttp"
 
@@ -135,7 +137,7 @@ func TestEveryAdminResourceRequiresAuthAndSecurityHeaders(t *testing.T) {
 
 func TestEmbeddedAssetsHaveCorrectTypesAndNoCredentials(t *testing.T) {
 	app, _ := adminTestApp(t, true)
-	for _, asset := range []struct{ path, media, marker string }{{BasePath, "text/html", "Proxy firewall"}, {BasePath + "/assets/admin.css", "text/css", ":root"}, {BasePath + "/assets/admin.js", "text/javascript", "textContent"}, {BasePath + "/assets/favicon.svg", "image/svg+xml", "<svg"}} {
+	for _, asset := range []struct{ path, media, marker string }{{BasePath, "text/html", "Proxy-Firewall"}, {BasePath + "/assets/admin.css", "text/css", ":root"}, {BasePath + "/assets/admin.js", "text/javascript", "textContent"}, {BasePath + "/assets/favicon.svg", "image/svg+xml", "<svg"}} {
 		resp := request(t, app, http.MethodGet, asset.path, validBasic())
 		if resp.StatusCode != 200 {
 			t.Fatalf("%s status=%d", asset.path, resp.StatusCode)
@@ -145,6 +147,9 @@ func TestEmbeddedAssetsHaveCorrectTypesAndNoCredentials(t *testing.T) {
 			t.Fatalf("content type: %s", resp.Header.Get("Content-Type"))
 		}
 		data, _ := io.ReadAll(resp.Body)
+		if asset.media == "text/html" && (!strings.Contains(string(data), "Codomari | Proxy-Firewall | Monitoring") || !strings.Contains(string(data), buildinfo.Version) || strings.Contains(string(data), "__PF_VERSION__")) {
+			t.Fatal("dashboard branding or embedded version missing")
+		}
 		if !strings.Contains(string(data), asset.marker) || strings.Contains(string(data), "test-password") || strings.Contains(string(data), "test-admin") {
 			t.Fatal("asset missing or credentials reflected")
 		}

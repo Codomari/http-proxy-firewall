@@ -204,7 +204,11 @@ func (h *Handler) logError(c fiber.Ctx, err error) {
 	}
 	h.mu.Unlock()
 	if emit {
-		h.logger.WarnContext(c.Context(), "upstream request failed", "client_ip", firewall.ClientIP(c), "error_type", fmt.Sprintf("%T", err))
+		attributes := []any{"client_ip", firewall.ClientIP(c), "error_type", fmt.Sprintf("%T", err)}
+		if hostname, hostErr := firewall.CanonicalHostname(string(c.Request().Header.Host())); hostErr == nil {
+			attributes = append(attributes, "hostname", hostname)
+		}
+		h.logger.WarnContext(c.Context(), "upstream request failed", attributes...)
 	}
 }
 

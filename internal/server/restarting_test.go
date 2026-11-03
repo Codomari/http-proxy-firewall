@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -21,11 +22,16 @@ func TestRestartScreenIsEmbeddedAndOnlyUsedDuringFirewallShutdown(t *testing.T) 
 		io.WriteString(w, "backend unavailable")
 	}))
 	defer upstream.Close()
-	s := newTestServer(t, serverConfig(upstream.URL))
+	cfg := serverConfig(upstream.URL)
+	certFile, keyFile, roots := certificateFiles(t)
+	cfg.TLS.Enabled, cfg.TLS.CertificateFile, cfg.TLS.PrivateKeyFile = true, certFile, keyFile
+	s := newTestServer(t, cfg)
 	if err := s.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	client := &http.Client{Timeout: time.Second}
+	transport := &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}}
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Timeout: time.Second, Transport: transport}
 	address := "http://" + s.HTTPAddress().String()
 	response, err := client.Get(address)
 	if err != nil {
@@ -47,36 +53,39 @@ func TestRestartScreenIsEmbeddedAndOnlyUsedDuringFirewallShutdown(t *testing.T) 
 		}
 		time.Sleep(time.Millisecond)
 	}
-	for _, method := range []string{"GET", "HEAD", "POST"} {
-		request, _ := http.NewRequest(method, address+"/anything?token=must-not-be-reflected", nil)
-		response, err = client.Do(request)
-		if err != nil {
-			t.Fatal(err)
-		}
-		body, _ = io.ReadAll(response.Body)
-		response.Body.Close()
-		if response.StatusCode != 540 || response.Status != "540 Server Restarting" || response.Header.Get("Retry-After") != "3" || response.Header.Get("Cache-Control") != "no-store" || !response.Close {
-			t.Fatalf("restart response: %s %v", response.Status, response.Header)
-		}
-		if method == "HEAD" {
-			if len(body) != 0 {
-				t.Fatal("HEAD response sent a body")
+	for _, endpoint := range []string{address, "https://" + s.TLSAddress().String()} {
+		for _, method := range []string{"GET", "HEAD", "POST"} {
+			request, _ := http.NewRequest(method, endpoint+"/anything?token=must-not-be-reflected", nil)
+			request.Host = "tenant.example.test"
+			response, err = client.Do(request)
+			if err != nil {
+				t.Fatal(err)
 			}
-			continue
-		}
-		for _, want := range []string{"Server restarting", restartingJS, restartingCSS} {
-			if !strings.Contains(string(body), want) {
-				t.Fatal("embedded restart page missing content")
+			body, _ = io.ReadAll(response.Body)
+			response.Body.Close()
+			if response.StatusCode != 540 || response.Status != "540 Server Restarting" || response.Header.Get("Retry-After") != "3" || response.Header.Get("Cache-Control") != "no-store" || !response.Close {
+				t.Fatalf("restart response: %s %v", response.Status, response.Header)
 			}
-		}
-		for _, excluded := range []string{"{{STYLE}}", "{{SCRIPT}}", "must-not-be-reflected", "<script src=", "<link "} {
-			if strings.Contains(string(body), excluded) {
-				t.Fatalf("page contains external resource or unexpanded text: %s", excluded)
+			if method == "HEAD" {
+				if len(body) != 0 {
+					t.Fatal("HEAD response sent a body")
+				}
+				continue
 			}
-		}
-		csp := response.Header.Get("Content-Security-Policy")
-		if !strings.Contains(csp, assetHash(restartingJS)) || !strings.Contains(csp, assetHash(restartingCSS)) {
-			t.Fatal("CSP does not allow the embedded assets")
+			for _, want := range []string{"Server restarting", restartingJS, restartingCSS} {
+				if !strings.Contains(string(body), want) {
+					t.Fatal("embedded restart page missing content")
+				}
+			}
+			for _, excluded := range []string{"{{STYLE}}", "{{SCRIPT}}", "must-not-be-reflected", "<script src=", "<link "} {
+				if strings.Contains(string(body), excluded) {
+					t.Fatalf("page contains external resource or unexpanded text: %s", excluded)
+				}
+			}
+			csp := response.Header.Get("Content-Security-Policy")
+			if !strings.Contains(csp, assetHash(restartingJS)) || !strings.Contains(csp, assetHash(restartingCSS)) {
+				t.Fatal("CSP does not allow the embedded assets")
+			}
 		}
 	}
 	if calls.Load() != 1 {

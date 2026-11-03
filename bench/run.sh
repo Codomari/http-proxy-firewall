@@ -2,14 +2,14 @@
 # Run only inside the local, isolated Docker benchmark network.
 set -eu
 BENCH_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-export BENCH_RESULTS_DIR=${BENCH_RESULTS_DIR:-"$BENCH_DIR/results"}
+export BENCH_RESULTS_DIR=${BENCH_RESULTS_DIR:-"$BENCH_DIR/results/v0.3.4"}
 mkdir -p "$BENCH_RESULTS_DIR"
 DURATION=${DURATION:-15s}
 WARMUP=${WARMUP:-2s}
 REPEATS=${REPEATS:-3}
 CONCURRENCIES=${CONCURRENCIES:-"64 256 1024"}
 SCHEMES=${SCHEMES:-"http https"}
-WORKLOADS=${WORKLOADS:-"get form"}
+WORKLOADS=${WORKLOADS:-"get form multipart"}
 COMPOSE_FILE="$BENCH_DIR/compose.yaml"
 
 compose() { docker compose -f "$COMPOSE_FILE" "$@"; }

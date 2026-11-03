@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark light">
-  <title>Proxy firewall · Server monitor</title>
+  <title>Codomari | Proxy-Firewall | Monitoring</title>
   <link rel="icon" type="image/svg+xml" href="/__pf/__admin/assets/favicon.svg">
   <link rel="stylesheet" href="/__pf/__admin/assets/admin.css">
   <script defer src="/__pf/__admin/assets/admin.js"></script>
@@ -12,7 +12,7 @@
 <body>
   <main class="shell">
     <header class="page-header">
-      <div><p class="eyebrow">SERVER MONITOR</p><h1>Proxy firewall</h1><p class="subtitle">Host activity and process health, refreshed every 2 seconds.</p></div>
+      <div><p class="eyebrow">Codomari</p><h1>Proxy-Firewall <span class="release-version">· __PF_VERSION__</span></h1><p class="subtitle">Host activity and process health, refreshed every 2 seconds.</p></div>
       <div class="live-controls"><span id="connection" class="status connecting" role="status">Connecting</span><button id="refresh" type="button">Refresh now</button></div>
     </header>
     <div id="error" class="error" role="alert" hidden></div>
@@ -68,7 +68,7 @@
     </div>
     <div id="view-rules" role="tabpanel" aria-labelledby="tab-rules" tabindex="0" hidden>
     <section class="panel logs-panel" aria-labelledby="general-rules-title">
-      <div class="panel-header"><div><h2 id="general-rules-title">General settings</h2><p id="general-rules-status" class="detail" role="status">Loading settings from .env…</p></div></div>
+      <div class="panel-header"><div><h2 id="general-rules-title">General settings</h2><p id="general-rules-status" class="detail" role="status">Loading YAML settings…</p></div></div>
       <form id="general-rules-form" class="general-rules-form">
         <label for="whitelist-ips">Whitelisted IPs<textarea id="whitelist-ips" rows="4" maxlength="16384" placeholder="203.0.113.8&#10;2001:db8::8" spellcheck="false"></textarea><span class="detail">IPv4 or IPv6 addresses, one per line or separated by commas.</span></label>
         <label for="whitelist-networks">Whitelisted networks<textarea id="whitelist-networks" rows="4" maxlength="16384" placeholder="203.0.113.0/24&#10;2001:db8::/32" spellcheck="false"></textarea><span class="detail">CIDR networks. Loopback networks remain included automatically.</span></label>
@@ -82,17 +82,18 @@
     </section>
     <section class="panel logs-panel" aria-labelledby="cloudflare-title">
       <div class="panel-header"><div><h2 id="cloudflare-title">Domain rules</h2><p id="cloudflare-status" class="detail" role="status">Loading domain rules…</p></div></div>
-      <form id="cloudflare-form" class="debug-controls"><label class="search-label" for="cloudflare-hostname">Domain or wildcard<input id="cloudflare-hostname" type="text" placeholder="example.com or *.example.com" maxlength="255" autocomplete="off" spellcheck="false" required></label><label class="search-label" for="rule-type">Rule type<select id="rule-type"><option value="cloudflare">Cloudflare</option></select></label><label class="switch-label"><input id="cloudflare-enabled" type="checkbox" role="switch" checked>Behind Cloudflare</label><button id="cloudflare-save" type="submit">Save rule</button></form>
-      <p class="log-note detail">A plain domain rule includes its www. subdomain by default. Applies to all requests, including firewall checks, debug filtering and upstream client IPs. Settings survive a restart. Headers are trusted only from Cloudflare edges or explicitly configured trusted proxies. Explicit hostname settings override inherited www. settings and wildcards; the most specific wildcard wins.</p>
+      <form id="cloudflare-form" class="debug-controls"><label class="search-label" for="cloudflare-hostname">Domain or wildcard<input id="cloudflare-hostname" type="text" placeholder="example.com or *.example.com" maxlength="255" autocomplete="off" spellcheck="false" required></label><label class="search-label" for="rule-type">Rule type<select id="rule-type"><option value="cloudflare">Behind CloudFlare</option></select></label><button id="cloudflare-save" type="submit">Save rule</button></form>
+      <p class="log-note detail">A plain domain rule includes its www. subdomain by default. Applies to all requests, including firewall checks, debug filtering and upstream client IPs. Settings survive a restart. Headers are trusted only from Cloudflare edges or explicitly configured trusted proxies. Each rule is enabled by its presence; remove it to use inherited or default behavior. Rules are saved to proxy-firewall.override.yaml.</p>
       <div id="cloudflare-error" class="error debug-error" role="alert" hidden></div>
-      <div class="table-scroll"><table><thead><tr><th scope="col">Domain pattern</th><th scope="col">Rule</th><th scope="col">Enabled</th></tr></thead><tbody id="cloudflare-hosts"><tr><td colspan="3" class="empty">Loading rules…</td></tr></tbody></table></div>
+      <div class="table-scroll"><table><thead><tr><th scope="col">Domain pattern</th><th scope="col">Rule</th><th scope="col">Action</th></tr></thead><tbody id="cloudflare-hosts"><tr><td colspan="3" class="empty">Loading rules…</td></tr></tbody></table></div>
     </section>
     </div>
     <div id="view-debug" role="tabpanel" aria-labelledby="tab-debug" tabindex="0" hidden>
     <section class="panel logs-panel" aria-labelledby="debug-title">
       <div class="panel-header"><div><h2 id="debug-title">Hostname request debug</h2><p id="debug-capture-status" class="detail" role="status">Loading debug status…</p></div><button id="debug-disable" type="button" disabled>Disable debug</button></div>
       <form id="debug-form" class="debug-controls"><label class="search-label" for="debug-hostname">Hostname or wildcard<input id="debug-hostname" type="text" placeholder="example.com or *.example.com" maxlength="255" autocomplete="off" spellcheck="false" required></label><label class="search-label" for="debug-client-ip">Source IP (optional)<input id="debug-client-ip" type="text" placeholder="All sources, or an IPv4 / IPv6 address" maxlength="45" autocomplete="off" spellcheck="false"></label><button id="debug-enable" type="submit">Enable debug</button></form>
-      <p class="log-note detail">Leave Source IP blank for all sources, or enter one verified client IP to narrow the capture. One capture is shared by all admins. *.example.com matches subdomains at any depth, excluding example.com. Completed requests show duration, response status, headers and a body preview up to 16 KiB; binary previews use base64. Duration includes streamed response transfer; upgraded connections show handshake preparation only. Disabling stops new captures; in-flight requests finish logging. Capture continues when this tab is closed and stops on service restart. Captured headers and response bodies may contain credentials, cookies and private data.</p>
+      <p class="log-note detail">Leave Source IP blank for all sources, or enter one verified client IP to narrow the capture. Multiple host/source captures can run at once; select a capture to view its history. *.example.com matches subdomains at any depth, excluding example.com. Completed requests show duration, response status, headers and a body preview up to 16 KiB; binary previews use base64. Duration includes streamed response transfer; upgraded connections show handshake preparation only. Disabling stops new requests for the selected capture; in-flight requests finish logging. Captures are saved to override YAML and resume after a service restart. Closing this tab only pauses viewing. Captured headers and response bodies may contain credentials, cookies and private data.</p>
+      <div class="debug-controls"><label class="search-label" for="debug-capture">View capture<select id="debug-capture"><option value="">No captures configured</option></select></label></div>
       <div id="debug-error" class="error debug-error" role="alert" hidden></div>
       <div id="debug-scroll" class="table-scroll debug-table-scroll" tabindex="0" aria-label="Debug requests"><table class="debug-table"><thead><tr><th scope="col">Time (UTC)</th><th scope="col">Client IP</th><th scope="col">Hostname</th><th scope="col">Method</th><th scope="col">URL</th><th scope="col">Duration</th><th scope="col">Status</th><th scope="col">Request headers</th><th scope="col">Response sent</th></tr></thead><tbody id="debug-rows"></tbody></table></div>
       <p id="debug-empty" class="log-note detail">Enable a capture rule to see matching requests.</p>

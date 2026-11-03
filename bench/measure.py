@@ -12,7 +12,7 @@ import threading
 import time
 
 ROOT = Path(__file__).resolve().parent.parent
-RESULTS = Path(os.environ.get("BENCH_RESULTS_DIR", ROOT / "bench/results/measured"))
+RESULTS = Path(os.environ.get("BENCH_RESULTS_DIR", ROOT / "bench/results/v0.3.4"))
 COMPOSE = ["docker", "compose", "-f", str(ROOT / "bench/compose.yaml")]
 
 
@@ -78,8 +78,10 @@ def metadata():
     info = json.loads(raw) if raw else {}
     result = {key: info.get(key) for key in ("NCPU", "MemTotal", "Architecture", "OSType", "OperatingSystem", "ServerVersion", "KernelVersion")}
     result["timestamp_utc"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    result["version"] = (ROOT / "VERSION").read_text().strip()
+    result["host_go_version"] = capture(["go", "version"])
     sources = set(ROOT.rglob("*.go")) | set((ROOT / "internal/admin/assets").glob("*"))
-    sources.update(ROOT / name for name in ("go.mod", "go.sum", "Dockerfile", "bench/Dockerfile", "bench/compose.yaml", "bench/run.sh", "bench/measure.py"))
+    sources.update(ROOT / name for name in ("go.mod", "go.sum", "Dockerfile", "bench/Dockerfile", "bench/compose.yaml", "bench/run.sh", "bench/measure.py", "VERSION", "version.go", "proxy-firewall.default.yaml"))
     result["source_sha256"] = {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(sources) if p.is_file()}
     result["containers"] = {}
     for name in ("firewall", "backend"):

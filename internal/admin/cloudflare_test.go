@@ -40,7 +40,7 @@ func TestCloudflareAdminSettingsAuthenticationCSRFAndPersistence(t *testing.T) {
 		{"POST", "hostname=example.com&enabled=maybe", "", true, true, 400},
 		{"POST", "hostname=example.com&enabled=true", "same-origin", true, true, 200},
 		{"POST", "hostname=example.com&enabled=false", "same-origin", true, true, 200},
-		{"DELETE", "", "", true, true, 405},
+		{"PUT", "", "", true, true, 405},
 	} {
 		req := httptest.NewRequest(tc.method, "http://admin.example/ops/api/cloudflare-hosts?"+tc.query, nil)
 		if tc.auth {

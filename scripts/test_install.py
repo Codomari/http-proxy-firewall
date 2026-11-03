@@ -35,7 +35,7 @@ class InstallTests(unittest.TestCase):
         self.commands.mkdir()
         self.protected = {
             path: fingerprint(path)
-            for name in (".env", ".creds", "proxy-firewall.conf")
+            for name in ("proxy-firewall.override.yaml", ".creds")
             if (path := PROJECT / name).is_file()
         }
         self.addCleanup(self.assert_protected)
@@ -66,16 +66,15 @@ class InstallTests(unittest.TestCase):
         self.install(make=True)
         for name in ("bin", "log", "files", ".cache", ".certs"):
             self.assertTrue((self.root / name).is_dir())
-        self.assertEqual((self.root / ".env").read_bytes(), (PROJECT / ".env.example").read_bytes())
+        self.assertEqual((self.root / "proxy-firewall.default.yaml").read_bytes(), (PROJECT / "proxy-firewall.default.yaml").read_bytes())
+        self.assertEqual((self.root / "proxy-firewall.override.yaml").read_text(), "env: []\nrules: []\ndebug: []\n")
+        self.assertFalse((self.root / ".env").exists())
+        self.assertFalse((self.root / "proxy-firewall.conf").exists())
         self.assertEqual((self.root / ".creds").read_bytes(), (PROJECT / ".creds.example").read_bytes())
         self.assertEqual((self.root / "LICENSE").read_bytes(), (PROJECT / "LICENSE").read_bytes())
-        self.assertEqual(
-            (self.root / "proxy-firewall.conf").read_bytes(),
-            (PROJECT / "proxy-firewall.example.conf").read_bytes(),
-        )
         self.assertEqual((self.root / "log/proxy-firewall.log").read_bytes(), b"")
         self.assertEqual((self.root / "bin/proxy-firewall").read_bytes(), (PROJECT / "bin/proxy-firewall").read_bytes())
-        for name in (".env", ".creds", "proxy-firewall.conf", "log/proxy-firewall.log"):
+        for name in ("proxy-firewall.override.yaml", ".creds", "log/proxy-firewall.log"):
             self.assertEqual(stat.S_IMODE((self.root / name).stat().st_mode), 0o600)
         self.assertEqual(stat.S_IMODE((self.root / "bin/proxy-firewall").stat().st_mode), 0o755)
         unit = self.unit.read_text()
@@ -84,7 +83,7 @@ class InstallTests(unittest.TestCase):
         self.assertIn("/etc/proxy-firewall/.certs", unit)
         self.assertIn("ReadWritePaths=/etc/proxy-firewall ", unit)
         self.assertIn("ReadOnlyPaths=/etc/proxy-firewall/bin", unit)
-        for protected in (".creds", "proxy-firewall.conf", "LICENSE"):
+        for protected in (".creds", "proxy-firewall.default.yaml", "LICENSE"):
             self.assertIn(f"-/etc/proxy-firewall/{protected}", unit)
         self.assertNotIn("-v2", unit)
 
@@ -95,13 +94,13 @@ class InstallTests(unittest.TestCase):
             folder.chmod(0o751)
             (folder / "keep nested").mkdir()
             (folder / "keep nested/sentinel").write_bytes(b"existing deployment data\x00\xff")
-        for name in (".env", ".creds", "proxy-firewall.conf", "log/proxy-firewall.log"):
+        for name in ("proxy-firewall.override.yaml", ".creds", "log/proxy-firewall.log"):
             path = self.root / name
             path.write_text(f"existing {name}\nGOMAXPROCS=99\n")
             path.chmod(0o640)
         binary = self.root / "bin/proxy-firewall"
         binary.write_bytes(b"old binary")
-        preserved = {p: fingerprint(p) for p in self.root.rglob("*") if p.is_file() and p != binary}
+        preserved = {p: fingerprint(p) for p in self.root.rglob("*") if p.is_file() and p not in (binary, self.root / "proxy-firewall.default.yaml")}
         directories = {p: stat.S_IMODE(p.stat().st_mode) for p in self.root.rglob("*") if p.is_dir()}
         self.install(threads=16)
         for path, expected in preserved.items():
@@ -113,7 +112,7 @@ class InstallTests(unittest.TestCase):
     def test_existing_config_and_log_symlinks_are_preserved(self):
         self.root.mkdir(parents=True)
         (self.root / "log").mkdir()
-        for name in (".env", ".creds", "proxy-firewall.conf", "log/proxy-firewall.log"):
+        for name in ("proxy-firewall.override.yaml", ".creds", "log/proxy-firewall.log"):
             target = self.base / Path(name).name
             target.write_text("keep linked deployment data\n")
             link = self.root / name
@@ -123,6 +122,22 @@ class InstallTests(unittest.TestCase):
         for path, before in expected.items():
             self.assertTrue(path.is_symlink())
             self.assertEqual(fingerprint(path), before)
+
+    def test_legacy_configuration_is_migrated_before_removal(self):
+        self.root.mkdir(parents=True)
+        (self.root / ".env").write_text("REDIS_PASSWORD=private-fixture-value\nPF_PROXY_TO=http://127.0.0.1:7000\n")
+        (self.root / "proxy-firewall.conf").write_text("PF_PROXY_TO=--proxy-to=127.0.0.1:8000\n")
+        self.install()
+        override = self.root / "proxy-firewall.override.yaml"
+        text = override.read_text()
+        self.assertIn("private-fixture-value", text)
+        self.assertIn("127.0.0.1:8000", text)
+        self.assertIn("127.0.0.1:7000", text)
+        self.assertFalse((self.root / ".env").exists())
+        self.assertFalse((self.root / "proxy-firewall.conf").exists())
+        before = fingerprint(override)
+        self.install()
+        self.assertEqual(fingerprint(override), before)
 
     def test_cpu_fraction_and_single_cpu_minimum(self):
         for threads in (1, 2, 3, 4, 5, 8, 16, 64):

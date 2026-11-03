@@ -11,7 +11,7 @@ esac
 install_dir="$destdir/etc/proxy-firewall"
 unit_dir="$destdir/etc/systemd/system"
 
-for source in bin/proxy-firewall .env.example .creds.example proxy-firewall.example.conf proxy-firewall.service LICENSE; do
+for source in bin/proxy-firewall proxy-firewall.default.yaml .creds.example proxy-firewall.service LICENSE; do
   test -f "$project_dir/$source" || { printf 'Missing installation source: %s\n' "$source" >&2; exit 1; }
 done
 
@@ -34,10 +34,17 @@ copy_if_missing() {
   fi
 }
 
-copy_if_missing "$project_dir/.env.example" "$install_dir/.env"
+# Defaults are release-owned; private overrides are preserved across upgrades.
+default_tmp=$(mktemp "$install_dir/.proxy-firewall.default.XXXXXX")
+trap 'rm -f "$default_tmp"' EXIT
+install -m 0644 "$project_dir/proxy-firewall.default.yaml" "$default_tmp"
+mv -f "$default_tmp" "$install_dir/proxy-firewall.default.yaml"
+"$project_dir/bin/proxy-firewall" --migrate-config "$install_dir"
+if [ ! -e "$install_dir/proxy-firewall.override.yaml" ] && [ ! -L "$install_dir/proxy-firewall.override.yaml" ]; then
+  (set -C; printf 'env: []\nrules: []\ndebug: []\n' > "$install_dir/proxy-firewall.override.yaml")
+fi
 copy_if_missing "$project_dir/.creds.example" "$install_dir/.creds"
 copy_if_missing "$project_dir/LICENSE" "$install_dir/LICENSE"
-copy_if_missing "$project_dir/proxy-firewall.example.conf" "$install_dir/proxy-firewall.conf"
 copy_if_missing /dev/null "$install_dir/log/proxy-firewall.log"
 
 if [ -d "$install_dir/bin/proxy-firewall" ]; then
@@ -51,7 +58,7 @@ trap 'rm -f "$binary_tmp"' EXIT
 trap 'exit 1' HUP INT TERM
 install -m 0755 "$project_dir/bin/proxy-firewall" "$binary_tmp"
 mv -f "$binary_tmp" "$install_dir/bin/proxy-firewall"
-# Pass the calculated Go runtime limit without modifying either configuration file.
+# Pass the calculated Go runtime limit without changing private overrides.
 unit_tmp=$(mktemp "$unit_dir/.proxy-firewall.service.XXXXXX")
 trap 'rm -f "$binary_tmp" "$unit_tmp"' EXIT
 sed "s/GOMAXPROCS=1 /GOMAXPROCS=$gomaxprocs /" "$project_dir/proxy-firewall.service" > "$unit_tmp"

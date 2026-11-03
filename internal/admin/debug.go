@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,16 +16,18 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"http-proxy-firewall/internal/config"
 	"http-proxy-firewall/internal/firewall"
 	"http-proxy-firewall/internal/observability"
 )
 
 type debugStatus struct {
-	Enabled  bool   `json:"enabled"`
-	Hostname string `json:"hostname"`
-	ClientIP string `json:"client_ip"`
-	File     string `json:"file"`
-	Error    string `json:"error,omitempty"`
+	Enabled  bool          `json:"enabled"`
+	Hostname string        `json:"hostname"`
+	ClientIP string        `json:"client_ip"`
+	File     string        `json:"file"`
+	Error    string        `json:"error,omitempty"`
+	Captures []debugStatus `json:"captures,omitempty"`
 }
 
 type debugHeader = observability.CapturedHeader
@@ -130,11 +133,82 @@ func parseDebugEntry(line string) debugEntry {
 // One process-wide capture is shared by all admins and both listeners. Opening
 // for each append supports rotation and leaves no descriptors to close on stop.
 type debugLog struct {
-	active atomic.Bool
-	mu     sync.Mutex
-	dir    string
+	active   atomic.Bool
+	mu       sync.Mutex
+	dir      string
+	status   debugStatus
+	tail     *logTail
+	store    *config.YAMLStore
+	captures map[string]*debugCapture
+}
+
+type debugCapture struct {
 	status debugStatus
 	tail   *logTail
+}
+
+func debugKey(host, source string) string { return host + "\n" + source }
+
+func (d *debugLog) loadConfig(store *config.YAMLStore) error {
+	document, err := store.Read()
+	if err != nil {
+		return err
+	}
+	d.captures = make(map[string]*debugCapture)
+	for _, capture := range document.Debug {
+		host, err := debugHostname(capture.Host)
+		if err != nil {
+			return err
+		}
+		source, err := debugSourceIP(capture.Source)
+		if err != nil {
+			return err
+		}
+		path := filepath.Join(d.dir, debugFilename(host, source))
+		if capture.LogFile != nil && *capture.LogFile != "" {
+			path = *capture.LogFile
+		}
+		enabled := capture.Enabled != nil && *capture.Enabled
+		if enabled {
+			if _, err := d.setPath(host, source, path); err != nil {
+				return err
+			}
+		} else {
+			state := &debugCapture{status: debugStatus{Hostname: host, ClientIP: source, File: filepath.ToSlash(path)}}
+			if _, err := os.Stat(path); err == nil {
+				state.tail = &logTail{path: path, maxLine: maxLogRead}
+			}
+			d.captures[debugKey(host, source)] = state
+			if d.status.Hostname == "" {
+				d.status, d.tail = state.status, state.tail
+			}
+		}
+	}
+	d.store = store
+	return nil
+}
+
+func (d *debugLog) statusLocked(state *debugCapture) debugStatus {
+	status := d.status
+	if state != nil {
+		status = state.status
+	}
+	status.Captures = []debugStatus{}
+	for _, capture := range d.captures {
+		status.Captures = append(status.Captures, capture.status)
+	}
+	sort.Slice(status.Captures, func(i, j int) bool {
+		return debugKey(status.Captures[i].Hostname, status.Captures[i].ClientIP) < debugKey(status.Captures[j].Hostname, status.Captures[j].ClientIP)
+	})
+	return status
+}
+
+func (d *debugLog) refreshActiveLocked() {
+	active := false
+	for _, capture := range d.captures {
+		active = active || capture.status.Enabled
+	}
+	d.active.Store(active)
 }
 
 func debugHostname(raw string) (string, error) {
@@ -183,6 +257,10 @@ func openDebugLog(path string) (*os.File, error) {
 }
 
 func (d *debugLog) set(raw, rawSourceIP string) (debugStatus, error) {
+	return d.setPath(raw, rawSourceIP, "")
+}
+
+func (d *debugLog) setPath(raw, rawSourceIP, path string) (debugStatus, error) {
 	name, err := debugHostname(raw)
 	if err != nil {
 		return debugStatus{}, err
@@ -193,10 +271,21 @@ func (d *debugLog) set(raw, rawSourceIP string) (debugStatus, error) {
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if err := os.MkdirAll(d.dir, 0700); err != nil {
+	if d.captures == nil {
+		d.captures = make(map[string]*debugCapture)
+	}
+	key := debugKey(name, sourceIP)
+	if path == "" {
+		if current := d.captures[key]; current != nil {
+			path = current.status.File
+		}
+		if path == "" {
+			path = filepath.Join(d.dir, debugFilename(name, sourceIP))
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return debugStatus{}, err
 	}
-	path := filepath.Join(d.dir, debugFilename(name, sourceIP))
 	file, err := openDebugLog(path)
 	if err != nil {
 		return debugStatus{}, err
@@ -204,20 +293,52 @@ func (d *debugLog) set(raw, rawSourceIP string) (debugStatus, error) {
 	if err := file.Close(); err != nil {
 		return debugStatus{}, err
 	}
-	d.status = debugStatus{Enabled: true, Hostname: name, ClientIP: sourceIP, File: filepath.ToSlash(path)}
-	d.tail = &logTail{path: path, maxLine: maxLogRead}
-	d.active.Store(true)
-	return d.status, nil
+	if d.store != nil {
+		enabled := true
+		if err := d.store.SetDebug(config.DebugCapture{Host: name, Source: sourceIP, Enabled: &enabled, LogFile: &path}); err != nil {
+			return debugStatus{}, err
+		}
+	}
+	state := &debugCapture{status: debugStatus{Enabled: true, Hostname: name, ClientIP: sourceIP, File: filepath.ToSlash(path)}, tail: &logTail{path: path, maxLine: maxLogRead}}
+	d.captures[key] = state
+	d.status, d.tail = state.status, state.tail
+	d.refreshActiveLocked()
+	return d.statusLocked(state), nil
 }
 
 func (d *debugLog) snapshot(disable bool) debugStatus {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if disable {
-		d.active.Store(false)
-		d.status.Enabled = false
+		if capture := d.captures[debugKey(d.status.Hostname, d.status.ClientIP)]; capture != nil {
+			capture.status.Enabled = false
+			d.status = capture.status
+		}
+		d.refreshActiveLocked()
 	}
-	return d.status
+	return d.statusLocked(nil)
+}
+
+func (d *debugLog) disable(host, source string) (debugStatus, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if host == "" {
+		host, source = d.status.Hostname, d.status.ClientIP
+	}
+	state := d.captures[debugKey(host, source)]
+	if state == nil {
+		return d.statusLocked(nil), nil
+	}
+	if d.store != nil {
+		enabled := false
+		if err := d.store.SetDebug(config.DebugCapture{Host: host, Source: source, Enabled: &enabled}); err != nil {
+			return debugStatus{}, err
+		}
+	}
+	state.status.Enabled = false
+	d.status, d.tail = state.status, state.tail
+	d.refreshActiveLocked()
+	return d.statusLocked(state), nil
 }
 
 // DebugMiddleware snapshots original request metadata before firewall/upstream
@@ -228,14 +349,16 @@ func (h *Handler) DebugMiddleware(clientIP func(fiber.Ctx) string) fiber.Handler
 			return c.Next()
 		}
 		started := time.Now()
-		line, tail := h.debug.capture(c, clientIP, started)
-		if tail == nil {
+		line, tails := h.debug.capture(c, clientIP, started)
+		if len(tails) == 0 {
 			return c.Next()
 		}
 		capture := observability.CaptureResponse(c, started, func(duration time.Duration, response observability.CapturedResponse) {
 			result, err := json.Marshal(debugResult{DurationMS: float64(duration) / float64(time.Millisecond), Response: response})
 			if err == nil {
-				h.debug.append(tail, line+" | "+string(result)+"\n")
+				for _, tail := range tails {
+					h.debug.append(tail, line+" | "+string(result)+"\n")
+				}
 			}
 		})
 		err := c.Next()
@@ -248,18 +371,22 @@ func (h *Handler) DebugMiddleware(clientIP func(fiber.Ctx) string) fiber.Handler
 	}
 }
 
-func (d *debugLog) capture(c fiber.Ctx, clientIP func(fiber.Ctx) string, started time.Time) (string, *logTail) {
+func (d *debugLog) capture(c fiber.Ctx, clientIP func(fiber.Ctx) string, started time.Time) (string, []*logTail) {
 	host, err := firewall.CanonicalHostname(string(c.Request().Header.Host()))
 	if err != nil {
 		return "", nil
 	}
+	sourceIP := clientIP(c)
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if !d.status.Enabled || !debugMatches(d.status.Hostname, host) {
-		return "", nil
+	var tails []*logTail
+	for _, capture := range d.captures {
+		status := capture.status
+		if status.Enabled && debugMatches(status.Hostname, host) && (status.ClientIP == "" || status.ClientIP == sourceIP) {
+			tails = append(tails, capture.tail)
+		}
 	}
-	sourceIP := clientIP(c)
-	if d.status.ClientIP != "" && sourceIP != d.status.ClientIP {
+	if len(tails) == 0 {
 		return "", nil
 	}
 	var line strings.Builder
@@ -273,7 +400,7 @@ func (d *debugLog) capture(c fiber.Ctx, clientIP func(fiber.Ctx) string, started
 		fmt.Fprintf(&line, "%s: %s", debugEscape(string(key)), strconv.QuoteToASCII(string(value)))
 	})
 	line.WriteString("]")
-	return line.String(), d.tail
+	return line.String(), tails
 }
 
 func (d *debugLog) append(tail *logTail, line string) {
@@ -286,13 +413,17 @@ func (d *debugLog) append(tail *logTail, line string) {
 		_, err = file.WriteString(line)
 		err = errors.Join(err, file.Close())
 	}
-	if d.tail != tail {
-		return
-	}
-	if err != nil {
-		d.status.Error = "Unable to append debug log; check disk space and log directory permissions."
-	} else {
-		d.status.Error = ""
+	for _, capture := range d.captures {
+		if capture.tail != tail {
+			continue
+		}
+		capture.status.Error = ""
+		if err != nil {
+			capture.status.Error = "Unable to append debug log; check disk space and log directory permissions."
+		}
+		if d.tail == tail {
+			d.status = capture.status
+		}
 	}
 }
 
@@ -315,7 +446,23 @@ func (h *Handler) serveDebug(c fiber.Ctx) error {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Debug controls do not accept request bodies"})
 		}
 		if c.Method() == fiber.MethodDelete {
-			return c.JSON(h.debug.snapshot(true))
+			host, source := c.Query("hostname"), c.Query("client_ip")
+			if host != "" {
+				var err error
+				host, err = debugHostname(host)
+				if err != nil {
+					return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+				}
+				source, err = debugSourceIP(source)
+				if err != nil {
+					return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+				}
+			}
+			status, err := h.debug.disable(host, source)
+			if err != nil {
+				return c.Status(503).JSON(fiber.Map{"error": "Unable to save debug settings to override YAML"})
+			}
+			return c.JSON(status)
 		}
 		if _, err := debugHostname(c.Query("hostname")); err != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
@@ -337,17 +484,20 @@ func (h *Handler) serveDebug(c fiber.Ctx) error {
 func (h *Handler) serveDebugLogs(c fiber.Ctx) error {
 	h.debug.mu.Lock()
 	defer h.debug.mu.Unlock()
-	status := h.debug.status
-	if h.debug.tail == nil {
+	state := h.debug.captures[debugKey(c.Query("hostname"), c.Query("client_ip"))]
+	status := h.debug.statusLocked(state)
+	tail := h.debug.tail
+	if state != nil {
+		tail = state.tail
+	}
+	if tail == nil {
 		return c.JSON(debugBatch{logBatch: logBatch{Lines: []string{}, Reset: true}, Status: status, Entries: []debugEntry{}})
 	}
-	// Changing captures invalidates old cursors even when two files happen to
-	// share a generation and offset. The UI also clears its history on change.
 	cursor := c.Query("cursor")
 	if c.Query("hostname") != status.Hostname || c.Query("client_ip") != status.ClientIP {
 		cursor = ""
 	}
-	batch, err := h.debug.tail.read(cursor)
+	batch, err := tail.read(cursor)
 	if err != nil {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "Debug log is unavailable", "status": status})
 	}

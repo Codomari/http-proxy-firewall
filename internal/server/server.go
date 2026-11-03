@@ -41,6 +41,7 @@ type Server struct {
 	started     bool
 	stopping    bool
 	restarting  atomic.Bool
+	hostnames   sync.Map
 	errors      chan error
 	wg          sync.WaitGroup
 }
@@ -83,9 +84,10 @@ func New(cfg config.Config, engine *firewall.Engine, upstream *proxy.Handler, lo
 }
 
 type safeLogger struct {
-	logger *slog.Logger
-	mu     sync.Mutex
-	next   time.Time
+	logger   *slog.Logger
+	hostname func(net.Addr, net.Addr) string
+	mu       sync.Mutex
+	next     time.Time
 }
 
 func (l *safeLogger) Printf(format string, args ...any) {
@@ -97,8 +99,40 @@ func (l *safeLogger) Printf(format string, args ...any) {
 	}
 	l.mu.Unlock()
 	if emit {
-		l.logger.Warn("HTTP connection failed", "client_ip", connectionClientIP(format, args), "error", connectionError(format, args))
+		attributes := []any{"client_ip", connectionClientIP(format, args), "error", connectionError(format, args)}
+		if l.hostname != nil && format == "error when serving connection %q<->%q: %v" && len(args) >= 2 {
+			local, localOK := args[0].(net.Addr)
+			remote, remoteOK := args[1].(net.Addr)
+			if localOK && remoteOK {
+				if name := l.hostname(local, remote); name != "" {
+					attributes = append(attributes, "hostname", name)
+				}
+			}
+		}
+		l.logger.Warn("HTTP connection failed", attributes...)
 	}
+}
+
+func connectionKey(local, remote net.Addr) string {
+	if local == nil || remote == nil {
+		return ""
+	}
+	return local.String() + "\n" + remote.String()
+}
+
+func (s *Server) rememberHostname(local, remote net.Addr, raw string) {
+	if name, err := firewall.CanonicalHostname(raw); err == nil {
+		if key := connectionKey(local, remote); key != "" {
+			s.hostnames.Store(key, strings.Clone(name))
+		}
+	}
+}
+
+func (s *Server) connectionHostname(local, remote net.Addr) string {
+	if name, exists := s.hostnames.Load(connectionKey(local, remote)); exists {
+		return name.(string)
+	}
+	return ""
 }
 
 func connectionError(format string, args []any) string {
@@ -238,6 +272,10 @@ func (s *Server) tlsConfiguration() (*tls.Config, error) {
 		minimum = tls.VersionTLS10
 	}
 	result := &tls.Config{MinVersion: minimum, NextProtos: []string{"http/1.1"}}
+	result.GetConfigForClient = func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+		s.rememberHostname(hello.Conn.LocalAddr(), hello.Conn.RemoteAddr(), hello.ServerName)
+		return nil, nil
+	}
 	if s.cfg.TLS.CertificateFile != "" || s.cfg.TLS.PrivateKeyFile != "" {
 		pair, err := tls.LoadX509KeyPair(s.cfg.TLS.CertificateFile, s.cfg.TLS.PrivateKeyFile)
 		if err != nil {

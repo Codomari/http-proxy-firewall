@@ -12,7 +12,7 @@ import sys
 from urllib.parse import urlsplit
 
 
-DEFAULT_RESULTS = Path(__file__).resolve().parent / "results" / "final"
+DEFAULT_RESULTS = Path(__file__).resolve().parent / "results" / "v0.3.4"
 UTC = dt.timezone.utc
 REJECTION_WORKLOADS = {"malformed-multipart", "progress", "get-body", "encoded"}
 

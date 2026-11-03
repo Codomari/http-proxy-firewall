@@ -388,8 +388,83 @@ func TestDebugStructuredPollingAppendIdleAndRuleChange(t *testing.T) {
 	if _, err := h.debug.set("other.example", ""); err != nil {
 		t.Fatal(err)
 	}
-	changed := read(status.Hostname, status.ClientIP, next.Cursor)
+	changed := read("other.example", "", next.Cursor)
 	if changed.Status.Hostname != "other.example" || len(changed.Entries) != 0 || !changed.Reset {
 		t.Fatal("new capture leaked rows from the previous rule")
+	}
+}
+
+func TestYAMLDebugCapturesRunTogetherAndPersistIndependently(t *testing.T) {
+	root := t.TempDir()
+	defaultPath, overridePath := filepath.Join(root, config.DefaultYAML), filepath.Join(root, config.OverrideYAML)
+	logA, logB, logAll := filepath.Join(root, "log", "a.log"), filepath.Join(root, "log", "b.log"), filepath.Join(root, "log", "all.log")
+	document := "env: []\nrules: []\ndebug:\n  - host: a.example.test\n    enabled: true\n    log_file: " + strconv.Quote(logA) + "\n  - host: b.example.test\n    enabled: true\n    log_file: " + strconv.Quote(logB) + "\n  - host: '*.example.test'\n    enabled: true\n    log_file: " + strconv.Quote(logAll) + "\n"
+	if err := os.WriteFile(defaultPath, []byte(document), 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Defaults()
+	cfg.Admin.Enabled, cfg.Admin.URI = true, "ops"
+	cfg.Admin.Accounts = []config.AdminAccount{{User: "test-admin", Password: "test-password:with-colon"}}
+	cfg.Source = config.NewYAMLStore(defaultPath, overridePath)
+	h, err := New(cfg, monitoring.New(cfg), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := fiber.New()
+	h.Mount(app)
+	app.Use(h.DebugMiddleware(func(fiber.Ctx) string { return "203.0.113.8" }))
+	app.Use(func(c fiber.Ctx) error { return c.Status(201).SendString("payload") })
+	send := func(host string) {
+		t.Helper()
+		response, err := app.Test(httptest.NewRequest("GET", "http://"+host+"/traffic", nil))
+		if err != nil {
+			t.Fatal(err)
+		}
+		io.Copy(io.Discard, response.Body)
+		response.Body.Close()
+	}
+	send("a.example.test")
+	send("b.example.test")
+	lineCount := func(path string) int {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.Count(string(data), "\n")
+	}
+	if lineCount(logA) != 1 || lineCount(logB) != 1 || lineCount(logAll) != 2 {
+		t.Fatal("matching captures did not run concurrently")
+	}
+	req := httptest.NewRequest("DELETE", "http://admin.example/ops/api/debug?hostname=a.example.test", nil)
+	req.Header.Set("Authorization", validBasic())
+	req.Header.Set("X-PF-Admin", "1")
+	response, err := app.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != 200 {
+		t.Fatal("disable failed")
+	}
+	send("a.example.test")
+	send("b.example.test")
+	if lineCount(logA) != 1 || lineCount(logB) != 2 || lineCount(logAll) != 4 {
+		t.Fatal("disabling one capture affected another")
+	}
+	restarted, err := New(cfg, monitoring.New(cfg), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := restarted.debug.snapshot(false)
+	if len(status.Captures) != 3 || !restarted.debug.active.Load() {
+		t.Fatal("captures did not resume after restart")
+	}
+	for _, capture := range status.Captures {
+		if capture.Hostname == "a.example.test" && capture.Enabled {
+			t.Fatal("disabled capture resumed")
+		}
+		if capture.Hostname == "b.example.test" && (!capture.Enabled || capture.File != logB) {
+			t.Fatal("custom capture filename or enabled state was lost")
+		}
 	}
 }

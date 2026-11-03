@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.3.7
+
+Seven features added since the preceding commit, using the requested 0.3 release baseline.
+
+### Added
+
+- YAML configuration with public `proxy-firewall.default.yaml`, ignored private `proxy-firewall.override.yaml`, environment export, typed override merging, and persistent concurrent host/source debug captures with configured log files. Admin changes save atomically to the override file. Verified migration preserves the effective legacy settings before removing `.env` and `proxy-firewall.conf`.
+- Presence-only **Behind CloudFlare** domain rules: add or remove a hostname without an on/off checkbox; YAML hostname parameters use `value: true`.
+- Optional `hostname` in HTTP connection failure warnings, using TLS SNI for handshake/certificate failures and a known HTTP Host for later connection failures. Connection metadata is released on closure or protocol handoff.
+- Build-time embedding of `VERSION`, versioned `Server: codomari/proxy-firewall/<version>` headers, and Codomari admin branding with version display and tab-specific browser titles.
+- Optional canonical `hostname` in upstream request failure warnings while retaining verified client IPs, error types and log sampling.
+- Optional canonical `hostname` in firewall request-rejection warnings, including body-policy failures, without changing rejection reasons or suppression accounting.
+- Public-host restart/recovery screen that stays visible while background HEAD probes retry; 4xx/5xx responses keep retrying and a successful 2xx/3xx response resumes navigation once.
+
+### Changed
+
+- Replace legacy dotenv/configuration samples and installation paths with YAML defaults and private overrides; Docker build contexts exclude private overrides.
+- Replace old benchmark result sets and performance claims with 67 fresh cases measured on the 0.3.4 baseline: 36,091,583 firewall requests and zero failures. The final upstream/rejection log hostname changes were tested without rerunning benchmarks, as requested.
+
 ## 0.2.5
 
 Five features added since 0.2.0; the patch number increases by the feature count.

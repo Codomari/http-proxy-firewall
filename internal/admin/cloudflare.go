@@ -32,7 +32,7 @@ func (h *Handler) serveCloudflare(c fiber.Ctx) error {
 	switch c.Method() {
 	case fiber.MethodGet, fiber.MethodHead:
 		return c.JSON(h.cloudflareSnapshot())
-	case fiber.MethodPost:
+	case fiber.MethodPost, fiber.MethodDelete:
 		if !adminMutationAllowed(c) {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "Same-origin admin request without a body required"})
 		}
@@ -41,18 +41,19 @@ func (h *Handler) serveCloudflare(c fiber.Ctx) error {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 		}
 		value := c.Query("enabled")
-		if value != "true" && value != "false" {
+		if value != "" && value != "true" && value != "false" {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "enabled must be true or false"})
 		}
 		if h.cloudflare == nil {
 			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "Cloudflare settings are unavailable"})
 		}
-		if err := h.cloudflare.SetCloudflareHost(name, value == "true"); err != nil {
+		enabled := c.Method() != fiber.MethodDelete && value != "false"
+		if err := h.cloudflare.SetCloudflareHost(name, enabled); err != nil {
 			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "Unable to save Cloudflare settings. Check the settings file permissions, disk space and 256-rule limit."})
 		}
 		return c.JSON(h.cloudflareSnapshot())
 	default:
-		c.Set("Allow", "GET, HEAD, POST")
+		c.Set("Allow", "GET, HEAD, POST, DELETE")
 		return c.SendStatus(fiber.StatusMethodNotAllowed)
 	}
 }

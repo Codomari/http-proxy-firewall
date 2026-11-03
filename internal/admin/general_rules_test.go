@@ -32,8 +32,8 @@ func (source *testGeneralRulesSource) SetGeneralRules(settings config.GeneralRul
 
 func TestGeneralRulesAPIAuthenticationValidationPersistenceAndRuntime(t *testing.T) {
 	root := t.TempDir()
-	path := filepath.Join(root, ".env")
-	const original = "# private settings\nREDIS_PASSWORD=private-value-never-returned\nIP_FILTER_WHITELIST=198.51.100.1\nIP_FILTER_ALLOWED_COUNTRIES=Turkey\n"
+	path := filepath.Join(root, config.OverrideYAML)
+	const original = "# private settings\nenv:\n  - key: REDIS_PASSWORD\n    value: private-value-never-returned\n  - key: IP_FILTER_WHITELIST\n    value: 198.51.100.1\n  - key: IP_FILTER_ALLOWED_COUNTRIES\n    value: Turkey\n"
 	if err := os.WriteFile(path, []byte(original), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestGeneralRulesAPIAuthenticationValidationPersistenceAndRuntime(t *testing
 		defer response.Body.Close()
 		data, _ := io.ReadAll(response.Body)
 		if strings.Contains(string(data), "private-value") {
-			t.Fatal("API exposed an unrelated .env secret")
+			t.Fatal("API exposed an unrelated YAML secret")
 		}
 		return response.StatusCode, data
 	}
@@ -102,12 +102,12 @@ func TestGeneralRulesAPIAuthenticationValidationPersistenceAndRuntime(t *testing
 	}
 	before, _ := os.ReadFile(path)
 	if string(before) != original {
-		t.Fatal("invalid request changed .env")
+		t.Fatal("invalid request changed override YAML")
 	}
 	status, data := call("GET", "", "", "", true, false)
 	var loaded generalRulesSnapshot
 	if status != 200 || json.Unmarshal(data, &loaded) != nil || len(loaded.WhitelistIPs) != 1 || loaded.WhitelistIPs[0] != "198.51.100.1" || !loaded.IPCheckpoint {
-		t.Fatal("GET did not read .env")
+		t.Fatal("GET did not read YAML")
 	}
 	status, data = call("POST", string(payload), "same-origin", "application/json", true, true)
 	if status != 200 || json.Unmarshal(data, &loaded) != nil {
@@ -120,7 +120,7 @@ func TestGeneralRulesAPIAuthenticationValidationPersistenceAndRuntime(t *testing
 	file := config.GeneralRulesFile{Path: path}
 	persisted, err := file.Read()
 	if err != nil || !reflect.DeepEqual(persisted, want) {
-		t.Fatal(".env save did not persist settings")
+		t.Fatal("YAML save did not persist settings")
 	}
 	if err := os.Rename(path, path+".saved"); err != nil {
 		t.Fatal(err)

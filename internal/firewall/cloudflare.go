@@ -12,6 +12,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"http-proxy-firewall/internal/config"
+
 	"github.com/gofiber/fiber/v3"
 )
 
@@ -46,6 +48,7 @@ type cloudflareSettings struct {
 	mu    sync.Mutex
 	path  string
 	rules atomic.Pointer[cloudflareRules]
+	store *config.YAMLStore
 }
 
 // CanonicalHostnamePattern validates DNS host patterns without accepting ports,
@@ -129,6 +132,29 @@ func (e *Engine) CloudflareHosts() []CloudflareHost {
 	return result
 }
 
+func (s *cloudflareSettings) loadYAML(store *config.YAMLStore) error {
+	document, err := store.Read()
+	if err != nil {
+		return err
+	}
+	hosts := make(map[string]bool)
+	for _, rule := range document.Rules {
+		for _, param := range rule.Params {
+			host, err := CanonicalHostnamePattern(param.Key)
+			if err != nil {
+				return err
+			}
+			hosts[host] = true
+		}
+	}
+	if len(hosts) > maxCloudflareHosts {
+		return errors.New("Cloudflare settings exceed 256 hostname rules")
+	}
+	s.store = store
+	s.rules.Store(&cloudflareRules{hosts: hosts})
+	return nil
+}
+
 // SetCloudflareHost persists first, then atomically publishes immutable rules so
 // a failed save cannot silently change request identity or source-IP filtering.
 func (e *Engine) SetCloudflareHost(raw string, enabled bool) error {
@@ -139,6 +165,17 @@ func (e *Engine) SetCloudflareHost(raw string, enabled bool) error {
 	s := &e.cloudflare
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.store != nil {
+		if enabled {
+			if current := s.rules.Load(); current != nil && !current.hosts[name] && len(current.hosts) >= maxCloudflareHosts {
+				return errors.New("Cloudflare settings exceed 256 hostname rules")
+			}
+		}
+		if err := s.store.SetCloudflareHost(name, enabled); err != nil {
+			return err
+		}
+		return s.loadYAML(s.store)
+	}
 	if s.path == "" {
 		return errors.New("Cloudflare hostname settings file is not configured")
 	}

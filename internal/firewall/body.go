@@ -222,6 +222,9 @@ func (e *Engine) logRejection(c fiber.Ctx, status int, err error, body []byte, r
 		"client_ip", ClientIP(c), "status", status, "error", err,
 		"reason", rejectionReasonNames[reason], "suppressed", suppressed,
 	}
+	if hostname, hostErr := CanonicalHostname(string(c.Request().Header.Host())); hostErr == nil {
+		attributes = append(attributes, "hostname", hostname)
+	}
 	if reason == rejectionMalformed && len(body) > 0 {
 		serialized, truncated := serializedFormDataChunk(body)
 		// QuoteToASCII produced a valid Go string literal. Decode it before

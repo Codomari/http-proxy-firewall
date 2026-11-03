@@ -63,7 +63,7 @@ func TestUpstreamFailureLogsVerifiedClientIP(t *testing.T) {
 				}
 			}
 			line := output.String()
-			if strings.Count(line, "\n") != 1 || !strings.Contains(line, `msg="upstream request failed"`) || !strings.Contains(line, "client_ip="+tt.want+" ") || !strings.Contains(line, "error_type=*errors.errorString") {
+			if strings.Count(line, "\n") != 1 || !strings.Contains(line, `msg="upstream request failed"`) || !strings.Contains(line, "client_ip="+tt.want+" ") || !strings.Contains(line, "error_type=*errors.errorString") || !strings.Contains(line, "hostname=example.test") {
 				t.Fatalf("missing verified IP or lost error sampling: %q", line)
 			}
 			if strings.Contains(line, "private upstream") || strings.Contains(line, "203.0.113.99") {

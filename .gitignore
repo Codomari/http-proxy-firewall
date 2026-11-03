@@ -1,7 +1,8 @@
 # Deployment credentials and private configuration.
+/proxy-firewall.override.yaml
+/.proxy-firewall.override-*.yaml
 .env
 .env.*
-!.env.example
 /.creds
 /.creds.*
 !/.creds.example

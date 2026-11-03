@@ -67,8 +67,8 @@ func TestLoadDeploymentFilesAndPrecedence(t *testing.T) {
 		}
 	}
 	files := map[string]string{
-		".env":                "PF_LISTEN=127.0.0.1:8181\nPF_PROXY_TO=http://127.0.0.1:9000\nPF_METRICS=false\n",
-		"proxy-firewall.conf": "PF_LISTEN_AT=--listen=127.0.0.1:8282\nPF_PROXY_TO=--proxy-to=127.0.0.1:9001\nPF_ENABLE_METRICS=--metrics=true\n",
+		DefaultYAML:  "env:\n  - key: PF_LISTEN\n    value: 127.0.0.1:8181\n  - key: PF_PROXY_TO\n    value: http://127.0.0.1:9000\n  - key: PF_METRICS\n    value: false\n",
+		OverrideYAML: "env:\n  - key: PF_LISTEN\n    value: 127.0.0.1:8282\n  - key: PF_PROXY_TO\n    value: http://127.0.0.1:9001\n  - key: PF_METRICS\n    value: true\n",
 	}
 	for name, content := range files {
 		if err := os.WriteFile(name, []byte(content), 0600); err != nil {

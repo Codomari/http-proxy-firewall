@@ -1,6 +1,6 @@
 # http-proxy-firewall
 
-Version **0.2.5** · [Changelog](CHANGELOG.md) · [MIT license](LICENSE)
+Version **0.3.7** · [Changelog](CHANGELOG.md) · [MIT license](LICENSE)
 
 A Layer 7 firewall using **Uber Fx 1.24** for dependency injection and lifecycle management, **Fiber 3.6** for HTTP handling, and a pooled native fasthttp upstream client. Requires **Go 1.27 or newer**.
 
@@ -11,12 +11,12 @@ The previous application is retained in the sibling `http-proxy-firewall.bak` di
 ```sh
 go mod download
 make build
-test -e .env || cp .env.example .env
+test -e proxy-firewall.override.yaml || printf 'env: []\nrules: []\ndebug: []\n' > proxy-firewall.override.yaml
 test -e .creds || cp .creds.example .creds
-chmod 600 .creds
+chmod 600 .creds proxy-firewall.override.yaml
 ```
 
-Edit `.env` for your domains, upstream and network policy. For local HTTP development:
+Edit `proxy-firewall.override.yaml` for your domains, upstream and network policy; `proxy-firewall.default.yaml` supplies public defaults. For local HTTP development:
 
 ```sh
 ./bin/proxy-firewall \
@@ -29,7 +29,7 @@ Edit `.env` for your domains, upstream and network policy. For local HTTP develo
 
 Run an upstream on port 8008 before sending requests. No Redis, MaxMind download or ACME account is required for this local mode. Googlebot ranges refresh in the background by default; set `PF_GOOGLE_RANGES_URL=` in the environment to disable that source for offline runs.
 
-Configuration precedence is command-line flags, process environment, optional `proxy-firewall.conf`, optional `.env`, then defaults. Invalid values fail startup. Existing flags `--listen`, `--proxy-to`, `--metrics`, `--silent`, `--enable-redis` and `--pprof-addr` are accepted. `--help` lists additional options. Upstream addresses accept `host:port` or an HTTP(S) origin.
+Configuration precedence is command-line flags, existing process environment, `proxy-firewall.override.yaml`, `proxy-firewall.default.yaml`, then built-in defaults. Startup exports the effective YAML `env` entries to the process environment, including custom keys; existing process values retain precedence. Invalid values fail startup. Existing flags `--listen`, `--proxy-to`, `--metrics`, `--silent`, `--enable-redis` and `--pprof-addr` are accepted. `--help` lists additional options. Upstream addresses accept `host:port` or an HTTP(S) origin.
 
 ## Structure and responsibilities
 
@@ -52,7 +52,7 @@ internal/admin/          Authenticated API and embedded dashboard assets
 
 The design applies the practices described in Robert C. Martin's [Clean Code](https://www.informit.com/store/clean-code-a-handbook-of-agile-software-craftsmanship-9780136083252): descriptive names, focused functions, cohesive packages, explicit ownership, and separation of construction from request handling. Interfaces describe actual external dependencies, and tests cover observable behavior. Fx is confined to the composition root; business components can be constructed directly in tests. There are no application `init()` functions, global service instances or background jobs started by imports.
 
-[Fx lifecycle hooks](https://uber-go.github.io/fx/lifecycle.html) start Redis workers and intelligence before opening listeners. Shutdown first announces the firewall restart for up to three seconds: new HTTP/HTTPS requests receive HTTP **540 Server Restarting**, `Retry-After: 3`, and a self-contained **Server restarting** screen. Its HTML, CSS and JavaScript are embedded in the binary. The screen counts down 3 → 2 → 1, probes the current URL with HEAD, and repeats through connection failures until navigation can resume with GET. Forms are never automatically resubmitted. The notice window is shortened to one tenth of a tighter shutdown deadline to reserve time for draining. Already running requests finish normally. Shutdown then closes listeners, drains requests, closes proxy connections, stops intelligence and stops Redis workers. The page also appears during a normal graceful stop; abrupt termination and requests arriving after listeners close cannot receive the page. The retry loop on an already displayed screen continues through that gap. Backend restarts/errors retain their existing status and response. Startup bind failures roll back acquired resources; listener failures request application shutdown.
+[Fx lifecycle hooks](https://uber-go.github.io/fx/lifecycle.html) start Redis workers and intelligence before opening listeners. Shutdown first announces the firewall restart for up to three seconds: new HTTP/HTTPS requests receive HTTP **540 Server Restarting**, `Retry-After: 3`, and a self-contained **Server restarting** screen. Its HTML, CSS and JavaScript are embedded in the binary. The screen counts down 3 → 2 → 1, probes the current URL with HEAD, and keeps the restart screen visible through connection failures and all 4xx/5xx responses. A 2xx/3xx response resumes navigation with one GET. This applies to public hostnames as well as admin requests on both listeners. Forms are never automatically resubmitted. The notice window is shortened to one tenth of a tighter shutdown deadline to reserve time for draining. Already running requests finish normally. Shutdown then closes listeners, drains requests, closes proxy connections, stops intelligence and stops Redis workers. The page also appears during a normal graceful stop; abrupt termination and requests arriving after listeners close cannot receive the page. The retry loop on an already displayed screen continues through that gap. Backend restarts/errors retain their existing status and response. Startup bind failures roll back acquired resources; listener failures request application shutdown.
 
 ## Request behavior
 
@@ -86,7 +86,7 @@ Disk space and mounts are included in the overview on Linux and macOS, sampled e
 
 The **Monitoring** tab contains traffic, CPU/RAM, services, disk space and Runtime; **Logs** contains the Service logs viewer; **Rules** manages per-domain rules; **Debug** captures requests for a selected hostname; **Host Activity** contains the searchable, sortable host table. Each section is collapsible, with native keyboard controls and all sections except logs initially expanded. Use the arrow keys, Home or End to switch tabs when a tab button is focused. Runtime appears at the bottom of Monitoring. Press **Show logs** in Logs to load the latest 100 complete lines from `log/proxy-firewall.log` in the service working directory (`/etc/proxy-firewall/log/proxy-firewall.log` under the supplied systemd unit). The protected `/api/logs` endpoint follows appended lines every two seconds while the panel, Logs tab and browser tab are visible. The browser retains the most recent 10,000 lines and follows new lines only when scrolled to the bottom. Hiding and reopening the panel starts again from the latest 100 lines. File replacement and truncation reset the file cursor while preserving visible history. Missing logs show an unavailable message and retry; deployments writing only to stdout/stderr need to redirect output to this file to use the viewer. Reads are capped at 1 MiB per request, individual displayed lines at 4 KiB, and unfinished lines wait for a newline. Very large initial tails may contain fewer than 100 lines; any truncation is indicated in the panel. Log content is rendered as plain text.
 
-In **Debug**, enter `example.com` or `*.example.com`, optionally enter a single IPv4/IPv6 address in **Source IP**, and press **Enable debug**. Leave Source IP blank to capture all sources; otherwise both hostname and verified source IP must match. Exact matching preserves `www` as a separate hostname; wildcards match subdomains at any depth, excluding the bare domain. Matching ignores hostname case, a final dot and the request's port. IPv4-mapped IPv6 source addresses normalize to IPv4. One active capture is shared across administrators and HTTP/HTTPS listeners. Starting another replaces the current target. Matching requests are selected and their original metadata copied before admission and firewall inspection, including requests that become firewall rejections or admission 503s. Entries are appended when the response completes. Admin routes and ACME challenges are handled separately; malformed requests rejected by the HTTP parser cannot be captured here.
+In **Debug**, enter `example.com` or `*.example.com`, optionally enter a single IPv4/IPv6 address in **Source IP**, and press **Enable debug**. Leave Source IP blank to capture all sources; otherwise both hostname and verified source IP must match. Exact matching preserves `www` as a separate hostname; wildcards match subdomains at any depth, excluding the bare domain. Matching ignores hostname case, a final dot and the request's port. IPv4-mapped IPv6 source addresses normalize to IPv4. Multiple captures can run concurrently across HTTP/HTTPS listeners. Each host/source combination is independent. Starting another adds or updates that capture; use the capture selector to view its history. Matching requests are selected and their original metadata copied before admission and firewall inspection, including requests that become firewall rejections or admission 503s. Entries are appended when the response completes. Admin routes and ACME challenges are handled separately; malformed requests rejected by the HTTP parser cannot be captured here.
 
 Captures append to `log/<sanitized-hostname>-<hash>.log` in the service working directory; source-filtered filenames also include `-from-<sanitized-ip>`. Basenames contain only lowercase letters, numbers and dashes before `.log`; a short stable hash distinguishes hostname/source combinations that otherwise flatten to the same name. Changing the source filter uses separate history. Wildcard matches share one file, with the actual destination hostname in each line. The Debug tab shows the active capture file and a table with Time (UTC), Client IP, Hostname, Method, URL, Duration, Status, expandable Request headers and expandable Response sent. Responses include headers, body byte count and a preview capped at 16 KiB. Binary previews use base64; compressed bodies retain their content encoding. Text, including HTML and scripts, is rendered as plain text. Duplicate request and response headers are preserved. Duration starts at the debug middleware and includes firewall/body inspection, upstream handling and streamed body transfer until the stream closes. Buffered local responses measure time until the response is prepared; 101 upgrades measure handshake preparation only, without tunnel traffic. Stream errors are shown with the captured response; byte counts describe body bytes read for transfer, without headers or wire framing, and do not confirm client receipt. Streaming previews do not buffer or delay the forwarded response. HEAD, 204 and 304 responses have no captured body.
 
@@ -96,9 +96,9 @@ The table continuously pulls logs for the active hostname/source rule every two 
 [2026-11-03T12:34:56.123Z] FROM: 203.0.113.42, TO: www.example.com, GET /path?q=1 [Host: "www.example.com", User-Agent: "example-client", X-Example: "value"] | {"duration_ms":12.345,"response":{"status":200,"headers":[{"name":"Content-Type","value":"text/plain"}],"bytes":2,"body":"OK","body_encoding":"utf-8","body_truncated":false}}
 ```
 
-The client IP uses the firewall's trusted proxy and per-host Cloudflare settings. Captured headers and response bodies can contain credentials, cookies and private data. **Disable debug** stops selecting new requests and preserves the file and visible history. Already selected requests finish logging to their original file, even if capture is disabled or another rule is enabled while they are in flight. Closing the tab only pauses viewing; captures continue until disabled or the service restarts. Debug starts disabled after restart and does not change configuration files. Logs are append-only and can be rotated externally. Write failures appear in the Debug status without changing request handling. The authenticated `/api/debug` endpoint exposes status via GET, enables via POST with `hostname` and optional `client_ip` query parameters, and disables via DELETE; mutations require `X-PF-Admin: 1` for CSRF protection. `/api/debug/logs` reads the current capture and returns structured `entries` for the table alongside the original `lines` and file cursor. New entries include `duration_ms` and `response` metadata.
+The client IP uses the firewall's trusted proxy and per-host Cloudflare settings. Captured headers and response bodies can contain credentials, cookies and private data. **Disable debug** stops selecting new requests for the selected capture and preserves its file and visible history; other captures continue. Already selected requests finish logging to their original file, even if capture is disabled or another rule is enabled while they are in flight. Closing the tab only pauses viewing; captures continue until disabled, and enabled captures resume after a restart. Debug controls persist enabled state and log-file paths to the override YAML. Logs are append-only and can be rotated externally. Write failures appear in the Debug status without changing request handling. The authenticated `/api/debug` endpoint exposes status via GET, enables via POST with `hostname` and optional `client_ip` query parameters, and disables via DELETE; mutations require `X-PF-Admin: 1` for CSRF protection. `/api/debug/logs` reads the current capture and returns structured `entries` for the table alongside the original `lines` and file cursor. New entries include `duration_ms` and `response` metadata.
 
-The **Rules** tab manages per-domain rules. Cloudflare is the currently supported rule type. Enter an exact domain or wildcard, select **Cloudflare**, set **Behind Cloudflare** on/off, then press **Save rule**. Cloudflare rules control client IP detection for **all requests** for matching domains, independently of debug capture. Rules refresh every two seconds while the Rules tab is visible and use the authenticated `/api/cloudflare-hosts` endpoint. Existing rows also provide on/off switches. Changes apply immediately and are stored atomically with mode `0600` in `files/cloudflare-hosts.json` (override with `PF_CLOUDFLARE_HOSTS_FILE`); this runtime file is ignored by Git. Invalid/unreadable settings fail startup; failed saves leave the active rules unchanged. The file stores a JSON object mapping hostname patterns to booleans, with at most 256 rules. Plain domain rules also cover their `www.` alias: `example.com` applies to both `example.com` and `www.example.com`. An explicit rule for `www.example.com` overrides that inherited setting. Domain rules (including inherited `www.` settings) override wildcards; among wildcards the most specific wins. An off rule can exclude a hostname from an enabled wildcard. The original global `PF_TRUST_CLOUDFLARE_HEADER` setting continues to apply where no hostname rule matches.
+The **Rules** tab manages per-domain rules. Select **Behind CloudFlare**, enter an exact domain or wildcard, and press **Save rule**. Presence enables the rule; **Remove rule** removes that explicit rule and restores inherited/default behavior. There is no on/off checkbox. Rules refresh every two seconds while the Rules tab is visible and use the authenticated `/api/cloudflare-hosts` endpoint (POST adds, DELETE removes). Changes apply immediately and persist in the override YAML. Plain domain rules also cover their `www.` alias; the most specific matching wildcard applies where no exact/inherited domain rule exists. Existing `PF_TRUST_CLOUDFLARE_HEADER` still supplies the fallback when no rule matches.
 
 An enabled hostname trusts `CF-Connecting-IP` only when the socket peer belongs to the bundled [Cloudflare IPv4](https://www.cloudflare.com/ips-v4/) / [IPv6](https://www.cloudflare.com/ips-v6/) ranges (verified November 3, 2026), or to operator-configured `PF_TRUSTED_PROXIES`. The bundled ranges require a code update if Cloudflare changes them. Trusted intermediaries must sanitize client-supplied identity headers. Direct untrusted requests cannot spoof their IP by setting Cloudflare or forwarding headers. Duplicate, malformed and zoned Cloudflare IP values are rejected. Cloudflare Pseudo IPv4 overwrite mode uses a valid `CF-Connecting-IPv6` value for the actual IPv6 client. This follows [Cloudflare's header definitions](https://developers.cloudflare.com/fundamentals/reference/http-headers/). Off rules disable Cloudflare-specific trust for the matching hostname; separately configured trusted-proxy forwarding still applies. The resolved IP is shared by debug filtering/logging, firewall checks and the upstream `X-Forwarded-For` value for each request.
 
@@ -133,7 +133,7 @@ The reproducible Docker harness is documented in [bench/README.md](bench/README.
 | Setting | v2 behavior |
 | --- | --- |
 | `IP_FILTER_*`, `DOS_DETECTOR_*`, `CVE_MITIGATOR_*` | Existing environment names retained. Country names remain English names, such as `Azerbaijan,Turkey`. |
-| Client IP forwarding | Direct peer by default. Per-host Behind Cloudflare switches trust Cloudflare edges for matching hostnames. Configure `PF_TRUSTED_PROXIES` for other proxies; `PF_TRUST_CLOUDFLARE_HEADER` remains the global fallback. |
+| Client IP forwarding | Direct peer by default. Per-host Behind CloudFlare rules trust Cloudflare edges for matching hostnames. Configure `PF_TRUSTED_PROXIES` for other proxies; `PF_TRUST_CLOUDFLARE_HEADER` remains the global fallback. |
 | TLS | Enabled by default on port 443. TLS 1.2 minimum; `--tls-legacy` explicitly enables compatibility with TLS 1.0/1.1. Configure `PF_TLS_HOSTS` to restrict certificate issuance. |
 | Static certificates | Set both `PF_TLS_CERT_FILE` and `PF_TLS_KEY_FILE` (or `--tls-cert` and `--tls-key`) to use your own certificate and skip ACME. |
 | Multiple internal hosts | `PF_UPSTREAM_ROUTES=example.test=http://internal-a:8080,api.example.test=https://internal-b:8443` selects a dedicated connection pool by incoming hostname. Unmatched hosts use `PF_PROXY_TO`. |
@@ -144,7 +144,7 @@ The reproducible Docker harness is documented in [bench/README.md](bench/README.
 | Metrics | Optional `--metrics` exposes `/__system__/__metrics__`; labels use bounded method/status values. |
 | Local data | `files/geo.mmdb` and `.cache/` stay local and ignored. No v1 files are imported automatically. |
 
-`proxy-firewall.example.conf` supplies the existing deployment format: `PF_LISTEN_AT=--listen=...`, `PF_PROXY_TO=--proxy-to=...`, `PF_ENABLE_METRICS=--metrics=...`, `PF_ENABLE_SILENT_MODE=--silent=...` and `PF_ENABLE_REDIS=--enable-redis=...`. These values are translated to typed settings without shell evaluation. Startup reads `.env` and `proxy-firewall.conf` without modifying them; saving General settings in the admin panel updates the managed values in `.env`. Under systemd, the application reads both files from `/etc/proxy-firewall`; values in `proxy-firewall.conf` take precedence over `.env`.
+Legacy `.env` and `proxy-firewall.conf` files are no longer read at startup. To migrate an existing deployment, run `./bin/proxy-firewall --migrate-config /etc/proxy-firewall` before starting it. Migration copies legacy values into the private override YAML, preserves the old effective precedence, retains shadowed `.env` values as private comments, verifies the written file, then removes the legacy files. The installer performs the same migration. No private override is copied into source control or the Docker build context.
 
 ## Verification
 
@@ -166,7 +166,7 @@ make build
 sudo make install
 ```
 
-`make install` builds and replaces `/etc/proxy-firewall/bin/proxy-firewall`, creates missing `bin`, `log`, `files`, `.cache` and `.certs` directories, and installs `/etc/systemd/system/proxy-firewall.service`. Existing directory contents and permissions are preserved. A missing `.env` is copied from `.env.example`; a missing `.creds` is copied from `.creds.example` with mode `0600`; a missing `proxy-firewall.conf` is copied from `proxy-firewall.example.conf`. Existing credential and configuration files are preserved. Local deployment files are never copied over existing server configuration. Review newly created examples before starting the service.
+`make install` builds and replaces `/etc/proxy-firewall/bin/proxy-firewall`, refreshes the public default YAML, creates missing `bin`, `log`, `files`, `.cache` and `.certs` directories, and installs `/etc/systemd/system/proxy-firewall.service`. The private override and credentials are preserved. Legacy configuration is verified and migrated before removal. A missing override starts with empty `env`, `rules` and `debug` lists; missing credentials are copied from `.creds.example` with mode `0600`. Local private deployment settings are never copied over an existing server override.
 
 Installation counts the server's online logical CPUs (including hardware threads) and sets `GOMAXPROCS` to `max(1, floor(count * 2 / 5))` in the generated systemd command. For example, 16 threads gives `GOMAXPROCS=6`. This takes precedence over any `GOMAXPROCS` in existing configuration files, without modifying them. Reinstalling recalculates the value.
 
@@ -174,7 +174,7 @@ Both stdout and stderr append to `/etc/proxy-firewall/log/proxy-firewall.log`. I
 
 Upstream failure warnings include the firewall's verified `client_ip`, honoring the configured trusted proxy policy. HTTP connection warnings include the socket peer IP; failures before HTTP headers are parsed cannot identify a client behind a proxy. Listener-wide failures without a connection use `client_ip=unknown`.
 
-HTTP responses identify the firewall as `Server: pf`, including proxied responses, admin assets, errors and protocol upgrades. Upstream `Server` values are replaced.
+HTTP responses identify the firewall as `Server: codomari/proxy-firewall/<version>`, including proxied responses, admin assets, errors and protocol upgrades. Upstream `Server` values are replaced.
 
 Installation does not start, restart or enable the service. When ready:
 
@@ -185,13 +185,35 @@ sudo systemctl restart proxy-firewall
 tail -f /etc/proxy-firewall/log/proxy-firewall.log
 ```
 
-The service has a 35-second stop deadline and permits atomic `.env` saves in its working directory. The binary directory, credentials file, deployment configuration and license remain read-only inside the systemd sandbox; log, data, cache and certificate directories remain writable. Install the updated unit and run `systemctl daemon-reload` before restarting an existing deployment to enable settings saves. To stage an installation without writing to `/etc`, use `make install DESTDIR=/absolute/staging/path`. `make test-install` checks fresh installation, repeat installation, configuration preservation and CPU sizing in temporary directories.
+The service has a 35-second stop deadline and permits atomic override YAML saves in its working directory. The binary directory, credentials file, public default YAML and license remain read-only inside the systemd sandbox; log, data, cache and certificate directories remain writable. Install the updated unit and run `systemctl daemon-reload` before restarting an existing deployment to enable settings saves. To stage an installation without writing to `/etc`, use `make install DESTDIR=/absolute/staging/path`. `make test-install` checks fresh installation, repeat installation, configuration preservation and CPU sizing in temporary directories.
 
 Fiber settings and ownership rules follow the [official Fiber API documentation](https://docs.gofiber.io/api/fiber/). Request-scoped Fiber values are copied before retention in caches or worker queues.
 
+## YAML configuration
+
+Both files use this structure. Override `env` entries replace defaults by `key`; rule parameters replace defaults by hostname key; debug entries merge by `host` and `source`. Debug fields omitted in the override inherit the default entry. Multiple entries may have `enabled: true`.
+
+```yaml
+env:
+  - key: PF_PROXY_TO
+    value: "http://127.0.0.1:8008"
+rules:
+  - type: Behind CloudFlare
+    params:
+      - key: "*.example.com"
+        value: true
+debug:
+  - host: "*.example.com"
+    source: "203.0.113.8"
+    enabled: true
+    log_file: "log/example.log"
+```
+
+`rules[].params[].value` is a presence marker, so the admin UI needs no boolean argument. Use `false` in an override to remove a rule inherited from defaults; the admin Remove action writes that marker. Empty lists inherit other default entries. Debug `source` may be blank for all IPs, and an omitted/empty `log_file` uses the generated private log filename. Both configuration files are limited to 1 MiB; invalid/duplicate fields fail validation without logging their values. The private override is ignored by Git and Docker. `VERSION` is embedded by the Go compiler; response headers and admin branding need no version file at runtime.
+
 ## General firewall settings
 
-At the top of **Rules**, **General settings** displays whitelisted IPs, CIDR networks, country names and the DDoS request-rate threshold from `.env`. Entries can be separated by commas or newlines. **Save general settings** validates the values, updates only `IP_FILTER_WHITELIST`, `IP_FILTER_WHITELIST_NETWORKS`, `IP_FILTER_ALLOWED_COUNTRIES`, `IP_FILTER_WHITELIST_CHECKPOINT`, `IP_FILTER_COUNTRIES_CHECKPOINT` and `DOS_DETECTOR_HOSTNAME_REQUEST_THRESHOLD`, and applies one complete settings snapshot immediately. Other `.env` values, comments and file permissions are preserved; saves use an atomic file replacement. The endpoint never returns unrelated settings or secrets. Startup overrides in the process environment or `proxy-firewall.conf` are shown because those sources still take precedence after restart.
+At the top of **Rules**, **General settings** displays whitelisted IPs, CIDR networks, country names and the DDoS request-rate threshold from the merged YAML. Entries can be separated by commas or newlines. **Save general settings** updates only the six corresponding `env` entries in `proxy-firewall.override.yaml` and applies the settings immediately. Unrelated YAML values and comments, including credentials, are preserved. Saves use an atomic file replacement; failures leave active rules unchanged. The API never returns unrelated environment values. Existing process overrides are shown because they still take precedence after restart.
 
 The two cookie-checkpoint checkboxes default to enabled: whitelisted IPs/networks and countries still pass through the cookie checkpoint when the hostname is under a DDoS penalty. Disable a checkbox to restore checkpoint bypass for that whitelist. If a client matches both lists, an enabled checkpoint takes priority. Static-file exemptions continue to apply. CVE/body validation and sensitive-query bot rules always run before these decisions, regardless of the switches. Loopback networks remain whitelisted automatically and follow the IP checkpoint switch. Country lookup uses the existing country names from the GeoIP database. The DDoS threshold is a positive integer from 1 to 1,000,000,000 requests/second per hostname, measured over the existing sampling window (10 seconds by default). Threshold changes apply immediately to detection; active penalties retain their expiry.
 
@@ -199,7 +221,7 @@ The authenticated `/api/general-rules` endpoint supports GET/HEAD and POST with 
 
 ## Versioning
 
-Increase the patch field by the number of user-facing features added since the preceding commit, keeping the major and minor fields unchanged. For example, `0.2.0` plus three features becomes `0.2.3`; after committing that version, five more features produce `0.2.8`. Count each logical feature once, using the committed `VERSION` as the baseline so repeated updates before a commit do not count it twice. Update `VERSION`, the README version and the changelog together. This batch adds five features and moves `0.2.0` to `0.2.5`.
+Increase the patch field by the number of user-facing features added since the preceding commit, keeping the major and minor fields unchanged. For example, `0.2.0` plus three features becomes `0.2.3`; after committing that version, five more features produce `0.2.8`. Count each logical feature once, using the committed `VERSION` as the baseline so repeated updates before a commit do not count it twice. Update `VERSION`, the README version and the changelog together. For the 0.3 release, seven feature groups since the preceding commit produce `0.3.7`.
 
 ## Maintainer
 
@@ -207,7 +229,7 @@ Maintained by **Anar K. Jafarov** (`num8er`), [anar.k.jafarov@gmail.com](mailto:
 
 ## Contributing and security reports
 
-Keep changes focused, update the relevant documentation and examples, and run `make check` before submitting. Include a reproducible test for behavioral fixes. Keep real `.env`, `.creds`, deployment configuration, keys and runtime data out of commits and public reports.
+Keep changes focused, update the relevant documentation and examples, and run `make check` before submitting. Include a reproducible test for behavioral fixes. Keep `proxy-firewall.override.yaml`, `.creds`, legacy deployment configuration, keys and runtime data out of commits and public reports.
 
 Report suspected vulnerabilities privately to [anar.k.jafarov@gmail.com](mailto:anar.k.jafarov@gmail.com). Include the affected version, impact, reproduction steps and sanitized configuration/log excerpts. Coordinate disclosure with the maintainer before publishing sensitive details.
 

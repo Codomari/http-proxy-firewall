@@ -13,25 +13,19 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/joho/godotenv"
 )
 
-// Load reads optional local deployment files without modifying the process environment.
-// Flags override process environment, then proxy-firewall.conf, .env and defaults.
+// Load merges YAML defaults and overrides, then process environment and flags.
+// ExportEnvironment is called once by main after complete validation succeeds.
 func Load(args []string, output io.Writer) (Config, error) {
+	store := NewYAMLStore(DefaultYAML, OverrideYAML)
+	document, err := store.Read()
+	if err != nil {
+		return Config{}, err
+	}
 	values := make(map[string]string)
-	for _, name := range []string{".env", "proxy-firewall.conf"} {
-		fileValues, err := godotenv.Read(name)
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return Config{}, fmt.Errorf("read %s: %w", name, err)
-		}
-		if err := mergeDeploymentValues(values, fileValues); err != nil {
-			return Config{}, fmt.Errorf("read %s: %w", name, err)
-		}
+	if err := mergeDeploymentValues(values, document.Environment()); err != nil {
+		return Config{}, err
 	}
 	environment := make(map[string]string)
 	for _, entry := range os.Environ() {
@@ -41,7 +35,19 @@ func Load(args []string, output io.Writer) (Config, error) {
 	if err := mergeDeploymentValues(values, environment); err != nil {
 		return Config{}, err
 	}
-	return Parse(args, values, output)
+	parsed, err := Parse(args, values, output)
+	if err != nil {
+		return Config{}, err
+	}
+	parsed.Source, parsed.environment = store, document.Environment()
+	return parsed, nil
+}
+
+func (c Config) ExportEnvironment() error {
+	if c.Source == nil {
+		return nil
+	}
+	return c.Source.Export(c.environment)
 }
 
 func Parse(args []string, values map[string]string, output io.Writer) (Config, error) {

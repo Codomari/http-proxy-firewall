@@ -103,11 +103,15 @@ func (s *Server) configureHTTPServer(upstream *proxy.Handler) {
 	handler := s.app.Handler()
 	fast := s.app.Server()
 	fast.ConnState = func(conn net.Conn, state fasthttp.ConnState) {
+		if state == fasthttp.StateNew || state == fasthttp.StateClosed || state == fasthttp.StateHijacked {
+			s.hostnames.Delete(connectionKey(conn.LocalAddr(), conn.RemoteAddr()))
+		}
 		if state == fasthttp.StateClosed {
 			upstream.AbortPendingUpgrade(conn)
 		}
 	}
 	fast.Handler = func(ctx *fasthttp.RequestCtx) {
+		s.rememberHostname(ctx.LocalAddr(), ctx.RemoteAddr(), string(ctx.Request.Header.Host()))
 		if s.restarting.Load() {
 			serveRestarting(ctx)
 			return
@@ -135,7 +139,7 @@ func (s *Server) configureHTTPServer(upstream *proxy.Handler) {
 	fast.HeaderReceived = func(*fasthttp.RequestHeader) fasthttp.RequestConfig {
 		return fasthttp.RequestConfig{ReadTimeout: s.cfg.HTTP.ReadTimeout, WriteTimeout: s.cfg.HTTP.WriteTimeout}
 	}
-	fast.Logger = &safeLogger{logger: s.logger}
+	fast.Logger = &safeLogger{logger: s.logger, hostname: s.connectionHostname}
 	fast.SecureErrorLogMessage = true
 }
 

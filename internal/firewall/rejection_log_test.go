@@ -93,6 +93,7 @@ func TestRejectionLoggingSamplesBeforeFormattingAndKeepsResponseStatus(t *testin
 	app := fiber.New()
 	ctx := new(fasthttp.RequestCtx)
 	ctx.Init(new(fasthttp.Request), &net.TCPAddr{IP: net.ParseIP("198.51.100.9")}, nil)
+	ctx.Request.Header.SetHost("WWW.Example.Test:443")
 	c := app.AcquireCtx(ctx)
 	defer app.ReleaseCtx(c)
 	c.Locals(clientIPKey{}, "198.51.100.9")
@@ -121,7 +122,7 @@ func TestRejectionLoggingSamplesBeforeFormattingAndKeepsResponseStatus(t *testin
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
-	if len(lines) != 2 || !strings.Contains(lines[1], "suppressed=3") || !strings.Contains(lines[1], "client_ip=198.51.100.9") || !strings.Contains(lines[1], "reason=malformed") || !strings.Contains(lines[1], "form_data=") {
+	if len(lines) != 2 || !strings.Contains(lines[1], "suppressed=3") || !strings.Contains(lines[1], "client_ip=198.51.100.9") || !strings.Contains(lines[1], "reason=malformed") || !strings.Contains(lines[1], "form_data=") || !strings.Contains(lines[1], "hostname=www.example.test") {
 		t.Fatalf("sample lost required context: %q", output.String())
 	}
 	if err := e.reject(c, 415, errors.New("unsupported encoding"), nil); err != nil {
@@ -129,6 +130,25 @@ func TestRejectionLoggingSamplesBeforeFormattingAndKeepsResponseStatus(t *testin
 	}
 	if strings.Count(output.String(), "\n") != 3 {
 		t.Fatal("one reason's traffic suppressed another reason's first sample")
+	}
+}
+
+func TestRejectionHostnameOmittedWhenUnavailable(t *testing.T) {
+	for _, host := range []string{"", "bad\nhost"} {
+		var output bytes.Buffer
+		e := testEngine(t, testConfig(), nil)
+		e.logger = slog.New(slog.NewTextHandler(&output, nil))
+		app := fiber.New()
+		var ctx fasthttp.RequestCtx
+		ctx.Request.Header.SetHost(host)
+		c := app.AcquireCtx(&ctx)
+		if err := e.reject(c, 400, errors.New("failed to read complete request body"), nil); err != nil {
+			t.Fatal(err)
+		}
+		app.ReleaseCtx(c)
+		if strings.Contains(output.String(), "hostname=") {
+			t.Fatal("rejection logged an invalid or unavailable hostname")
+		}
 	}
 }
 

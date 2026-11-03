@@ -1,2 +1,4 @@
 /bin/
-/results/
+/results/*
+!/results/v0.3.4/
+/results/v0.3.4/*.stdout.json

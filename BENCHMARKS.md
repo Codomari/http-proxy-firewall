@@ -1,183 +1,100 @@
-# Docker performance verification
+# Codomari Proxy-Firewall benchmarks
 
-Measured on **2026-11-01**, with the final embedded admin interface enabled and
-its authenticated overview API polled every two seconds.
+Fresh measurements recorded on **2026-11-03** using the **0.3.4 baseline**. The final **0.3.7** release adds hostname metadata to upstream-failure and request-rejection warnings and refines background restart recovery. Those final changes were tested without rerunning the benchmark matrix, as requested. Previous result sets were deleted.
 
-The main matrix processed **16,372,392 firewall requests with zero failed
-requests**, including **1,054,259 correctly rejected requests**. The separate
-direct-backend calibration processed 833,031 requests. Each accepted measured
-request had to return the backend's marker and complete its response body;
-cookie challenge pages could not count as forwarded successes.
+The run completed **67 cases**, including **36,091,583 firewall requests**, with **zero failed requests**. Of those firewall requests, **976,812** were correctly rejected hostile requests. The separate backend calibration completed **908,733** requests. Accepted responses had to carry the origin marker and be fully read; cookie challenge pages were excluded from forwarded successes.
 
-The highest observed main-matrix HTTP GET rate was **94,140 requests/sec** at
-64 clients, with **1.67 ms p99**. A **60-second HTTPS run at 1,024 clients**
-completed **3,785,984 requests**, averaging **63,089 requests/sec**, with
-**23.86 ms p99**, zero errors, and no OOM kill. These are measurements for the
-configuration below, rather than a capacity guarantee for other workloads.
+## Environment and method
 
-## Machine and configuration
-
-| Item | Measured configuration |
+| Item | Recorded setting |
 | --- | --- |
 | Host | Apple M4 Max, 16 physical CPUs, 128 GiB RAM |
-| Docker VM | Linux/ARM64, 8 vCPUs, 31.3 GiB RAM |
-| Engine | Docker 29.8.1; kernel 7.0.14-linuxkit |
-| Compiler | Go 1.27.3 linux/arm64 in Docker; host checks used Go 1.27.1 |
-| Firewall budget | 2-CPU quota, `GOMAXPROCS=2`, 1 GiB RAM, 512 PIDs |
-| Backend budget | 1 CPU, 512 MiB RAM |
-| Load-client budget | 4 CPUs, 2 GiB RAM |
-| Limits | 8,192 inbound connections, 2,048 handlers/upstream connections, 65,536 open-file limit |
-| Body budget | 32 MiB/request, 256 MiB aggregate retained inspection capacity |
-| Topology | Dedicated internal Docker network; no published ports |
-| Protocol | HTTP/1.1 keep-alive; HTTPS verifies the generated ECDSA certificate |
-| Payloads | 1,024-byte origin response; form values total 1,024 bytes before framing |
-| Workloads | GET, URL-encoded form, legitimate 20-field multipart, rejection/mixed traffic, slow origin |
-| Classifiers | Body/CVE and bot/query checks, IP checks, hostname detector, SID validation; no static/IP bypass for the target |
-| External services | Country allowlist empty, no GeoIP database, empty Google ranges, Redis disabled |
-| Monitoring | Prometheus and bounded admin tracking enabled; authenticated admin polling every 2 seconds |
+| Docker VM | 8 vCPUs, 31.3 GiB RAM, aarch64 |
+| Docker/kernel | 29.8.1; 7.0.14-linuxkit |
+| Compiler | Go 1.27.3 linux/arm64 in Docker; Go 1.27.1 darwin/arm64 for native validation |
+| Resource quotas | Firewall: 2 CPUs / 1 GiB / 512 PIDs; backend: 1 CPU / 512 MiB; client: 4 CPUs / 2 GiB |
+| Limits | 8,192 connections, 2,048 handlers/upstream connections, 32 MiB body / 256 MiB aggregate inspection budget |
+| Topology | Internal Docker network; no published ports; HTTP/1.1 keep-alive |
+| TLS | Verified generated ECDSA certificate, reused during this matrix |
+| Payloads | 1,024-byte origin response; form and 20-field multipart values total 1,024 bytes |
+| Detector | Threshold 1 request/sec averaged over 10 seconds, 30-minute penalty; each worker primes a valid SID cookie |
+| Classifiers | Full body/CVE and bot-query checks, hostname detector, cookie validation; no target static/IP bypass |
+| External services | Redis disabled; empty country/Google allowlists; no GeoIP database or live refresh |
+| Monitoring | Admin and Prometheus enabled; authenticated admin overview polled every two seconds |
 
-The DDoS threshold was 1 averaged request/sec over the existing ten-second
-window, with a 30-minute penalty. Warmup first observed a real SID challenge
-and then primed a separate cookie jar for every worker. Measured accepted
-requests used those cookies and still passed request inspection.
+Ordinary combinations ran three times for ten seconds after two seconds of warmup, at 64, 256 and 1,024 clients over HTTP and HTTPS. Rejection cases ran for three seconds; mixed and slow-origin cases ran for ten seconds. The HTTPS soak ran for sixty seconds. Warmup traffic is separate from measured counts.
 
-Firewall image: `sha256:59229a730e5581d96820f2f35a980498fbdd3112aca7fc7be0b0aaaea813b6be`.
-Load/backend image: `sha256:624e65dc2342f78f1e7ef8b916bdd84b0ccd51b432453fc9a2fe428da660aa51`.
-Exact limits, image IDs, state and source hashes are saved in
-[environment.json](bench/results/final/environment.json).
+## Repeated measurements
 
-## Main matrix
+RPS values are per-run results: median and min–max over three runs. p99 is the range of per-run p99 values, without pooling histograms. All rows had zero failures.
 
-Ordinary cases ran for 10 seconds after two seconds of warmup. The soak ran for
-60 seconds. All rows below had **zero failed requests**.
+| Protocol | Workload | Clients | Median RPS | RPS range | p99 range (ms) |
+| --- | --- | ---: | ---: | ---: | ---: |
+| HTTP | get | 64 | 96,484 | 96,423–97,482 | 1.62–1.65 |
+| HTTP | get | 256 | 95,329 | 91,937–96,171 | 5.31–5.57 |
+| HTTP | get | 1,024 | 73,477 | 72,477–74,351 | 19.92–20.45 |
+| HTTP | form | 64 | 73,694 | 73,465–73,769 | 2.65–2.82 |
+| HTTP | form | 256 | 74,311 | 74,030–75,138 | 7.01–7.14 |
+| HTTP | form | 1,024 | 66,171 | 65,963–66,617 | 22.28–22.54 |
+| HTTP | multipart | 64 | 20,569 | 19,501–20,785 | 6.95–7.41 |
+| HTTP | multipart | 256 | 20,848 | 20,771–20,911 | 22.28–22.54 |
+| HTTP | multipart | 1,024 | 21,916 | 21,458–22,293 | 57.67–59.24 |
+| HTTPS | get | 64 | 76,072 | 75,936–76,172 | 2.56–2.62 |
+| HTTPS | get | 256 | 75,473 | 75,074–75,558 | 7.08–7.27 |
+| HTTPS | get | 1,024 | 64,755 | 63,160–65,543 | 23.59–24.64 |
+| HTTPS | form | 64 | 67,199 | 66,988–67,616 | 3.08–3.15 |
+| HTTPS | form | 256 | 65,727 | 65,548–65,841 | 9.04–9.18 |
+| HTTPS | form | 1,024 | 58,199 | 58,068–58,333 | 26.48–26.74 |
+| HTTPS | multipart | 64 | 17,950 | 17,595–18,020 | 8.06–8.39 |
+| HTTPS | multipart | 256 | 18,702 | 18,558–19,056 | 23.86–24.38 |
+| HTTPS | multipart | 1,024 | 19,637 | 19,229–19,926 | 64.49–67.11 |
 
-| Protocol/workload | Concurrent clients | Requests/sec | p99 ms |
-| --- | ---: | ---: | ---: |
-| HTTP GET | 64 | 94,140 | 1.67 |
-| HTTP GET | 256 | 93,207 | 5.37 |
-| HTTP GET | 1,024 | 75,650 | 19.14 |
-| HTTPS GET | 64 | 79,071 | 2.49 |
-| HTTPS GET | 256 | 79,501 | 6.36 |
-| HTTPS GET | 1,024 | 66,266 | 22.02 |
-| HTTP URL-encoded form | 256 | 75,882 | 6.68 |
-| HTTPS URL-encoded form | 256 | 67,426 | 7.73 |
-| HTTP multipart, 20 fields | 256 | 23,293 | 20.97 |
-| HTTPS multipart, 20 fields | 256 | 21,808 | 21.76 |
-| HTTPS origin delayed 50 ms | 1,024 | 19,105 | 63.96 |
-| HTTPS GET, 60-second soak | 1,024 | 63,089 | 23.86 |
+## Rejection, mixed, slow-origin and soak checks
 
-The direct backend at 1,024 clients measured 83,200 requests/sec, p99 17.56 ms.
-It is a calibration at that concurrency, not an upper bound for lower-concurrency
-proxy cases. Backend/client CPU and the shared Docker network can limit results.
+All malformed multipart requests returned 400, upload-progress requests 403, GET bodies 400 and encoded bodies 415, without an origin marker. Expected 4xx responses are successful security checks, not failed requests. HTTPS rejection measurements include repeated handshakes because rejected requests close their connections.
 
-All four hostile cases produced their exact expected outcomes without an origin
-marker: malformed multipart **400**, upload-progress field **403**, GET body
-**400**, and encoded body **415**. HTTP rejection rates ranged from 58,530 to
-65,423 requests/sec; HTTPS ranged from 10,004 to 10,317. Rejections close their
-connection, so HTTPS rejection measurements include repeated TLS handshakes.
-The 15% malicious mix reached 82,487 requests/sec over HTTP and 36,132 over
-HTTPS, with zero incorrect outcomes. The full 31-case table, counts and
-percentiles are in [summary.md](bench/results/final/summary.md).
-
-## Sustained resources and dashboard verification
-
-The firewall's cgroup high-water mark over the complete main matrix was
-**230,060,032 bytes (219.4 MiB)**, against a 1 GiB limit. Its container remained
-running with `OOMKilled=false`; peak process/thread count was 16. This includes
-kernel-accounted container memory and is not a process-RSS measurement.
-
-During the 60-second soak, 120 firewall samples covered a 59.5-second span, with
-no gap above 0.51 seconds. Docker-reported memory usage ranged **175.3–186.3 MiB**
-and CPU averaged **192.6%** (roughly 1.93 CPUs). Twenty-eight admin samples
-covered 56.6 seconds of the same window, with no gap above 2.11 seconds.
-All reported **1,038 goroutines** and unchanged **158,464,296 runtime system
-bytes**. Live heap allocation varied with GC. These observations support the
-one-minute result; they do not establish long-term memory stability.
-
-Once firewall traffic began, admin samples reported the active DDoS penalty, one tracked hostname,
-zero untracked hosts, zero 5xx errors, and `GOMAXPROCS=2`. In-flight counters
-returned to zero between cases. Admin polls were excluded from traffic totals.
-Raw [Docker samples](bench/results/final/docker-stats.jsonl) and
-[admin responses](bench/results/final/admin-samples.jsonl) are retained.
-
-Chrome checks separately verified the embedded dashboard from an **empty working
-directory**: live rendering, domain search, inert HTML-shaped input, desktop and
-390-pixel mobile layouts, and no external requests or browser errors. See
-[verification.json](bench/results/admin-ui/verification.json),
-[desktop screenshot](bench/results/admin-ui/desktop.png) and
-[mobile screenshot](bench/results/admin-ui/mobile.png).
-
-## Profile-guided optimization and repeatability
-
-The initial v2 profile exposed an unconditional immediate-header flush on
-ordinary fixed-length responses. On plaintext TCP, that separated header and
-body writes and entered an `io.Copy` path allocating 32 KiB per response.
-The final version batches ordinary fixed-length headers with body bytes in the
-existing bounded writer buffer. Unknown-length streams and SSE retain prompt
-header delivery; response bodies continue streaming.
-
-Coordinated ten-second allocation profiles during separate 20-second HTTP
-256-client runs showed:
-
-| Profile | Sampled allocated space | Dominant finding |
-| --- | ---: | --- |
-| Initial v2 | 17,964.66 MB | `io.copyBuffer`: 17,351.62 MB, 96.59% |
-| Final v2 | 1,079.25 MB | The previous `io.copyBuffer` allocation is absent from the reported hot nodes |
-
-These are sampled allocations over time, not retained heap or RSS. The profiled
-runs had different achieved throughput (54,779 vs 90,128 requests/sec), and the
-final run also included per-host monitoring. Do not interpret the totals as a
-controlled per-request allocation comparison. A wire regression test additionally
-verifies one frontend write for an ordinary 1 KiB fixed response, while SSE and
-chunked-stream tests preserve delivery behavior. The profiles and text reports
-are under [bench/results](bench/results/).
-
-Two additional 10-second runs repeated HTTP GET and URL-encoded forms at
-256 clients. Combining those runs with the main matrix gives:
-
-| HTTP workload, 256 clients | Initial v2 RPS, one run | Final RPS range, three runs | Final median RPS | Final per-run p99 range |
+| Case | RPS | p99 (ms) | Measured requests | Failed |
 | --- | ---: | ---: | ---: | ---: |
-| GET | 59,238 | 92,367–93,207 | 93,109 | 5.37–5.83 ms |
-| URL-encoded form | 50,752 | 75,882–83,423 | 82,340 | 6.49–6.68 ms |
+| backend-get-c1024 | 90,749 | 15.86 | 908,733 | 0 |
+| http-mixed15-c256 | 78,121 | 7.54 | 781,351 | 0 |
+| http-reject-encoded-c64 | 58,394 | 2.33 | 175,237 | 0 |
+| http-reject-get-body-c64 | 59,380 | 2.26 | 178,209 | 0 |
+| http-reject-malformed-multipart-c64 | 58,950 | 2.36 | 176,890 | 0 |
+| http-reject-progress-c64 | 54,383 | 2.69 | 163,201 | 0 |
+| https-mixed15-c256 | 33,998 | 17.30 | 340,155 | 0 |
+| https-reject-encoded-c64 | 9,708 | 13.37 | 29,183 | 0 |
+| https-reject-get-body-c64 | 9,646 | 13.37 | 28,983 | 0 |
+| https-reject-malformed-multipart-c64 | 9,561 | 13.63 | 28,723 | 0 |
+| https-reject-progress-c64 | 9,351 | 13.37 | 28,086 | 0 |
+| https-slow50ms-c1024 | 19,183 | 62.91 | 192,615 | 0 |
+| https-soak-c1024 | 63,151 | 25.69 | 3,789,800 | 0 |
 
-Final median rates were 57% and 62% above those initial v2 points. This compares
-the complete tuning/monitoring bundle, not an isolated single change, and
-**does not compare v1 with v2**. HTTPS throughput was broadly similar to the
-initial run; the identified copy-buffer problem was specific to plaintext TCP.
-All ten additional repeat/calibration/rejection cases also had zero failed
-requests: [repeat summary](bench/results/repeats/summary.md).
+The direct-backend calibration used 1,024 clients. It does not establish an upper bound for lower-concurrency proxy runs; the backend, client and shared VM/network can limit throughput.
 
-## Reproduce
+## Resource observations and verification
+
+The firewall cgroup memory high-water mark was **277.1 MiB** against a 1 GiB limit, with `OOMKilled=false` and a cgroup peak of **16 tasks**. Docker reported a sampled peak of 271.9 MiB. These measures include different accounting and are not process RSS.
+
+During the sixty-second soak, **120 firewall samples** covered 59.5 seconds, with a maximum gap including edges of 0.501 seconds. Sampled memory ranged **176.6–217.4 MiB**; average CPU was **196.1%** (100% is one core). Twenty-nine admin samples covered 58.65 seconds with a maximum gap of 2.101 seconds. These observations describe this one-minute window, not long-term stability.
+
+Native tests and a DOM harness verified YAML merging/export, atomic persistence, simultaneous debug captures, presence-only rule actions, all five tab titles and TLS SNI diagnostics. The running benchmark image returned `Server: codomari/proxy-firewall/0.3.4` and the expected Codomari/versioned admin page without a runtime `VERSION` file. Private override YAML was absent from the image. See [verification.json](bench/results/v0.3.4/verification.json).
+
+The throughput matrix used debug capture disabled. It does not quantify debug-file I/O, YAML save latency, external Redis/GeoIP classification, or failure-log throughput. Closed-loop latency includes client/backend scheduling; it does not correct coordinated omission. Histogram values are rounded to buckets with less than 1.6% relative error.
+
+## Reproduction and evidence
 
 ```sh
-docker compose -f bench/compose.yaml build backend firewall
-BENCH_RESULTS_DIR="$PWD/bench/results/rerun" NO_BUILD=1 REPEATS=1 \
-  DURATION=10s WARMUP=2s WORKLOADS='get form multipart' \
-  SOAK=1 SOAK_DURATION=60s python3 bench/measure.py
-python3 bench/summarize.py bench/results/rerun
+NO_BUILD=1 REPEATS=3 DURATION=10s WARMUP=2s WORKLOADS="get form multipart" SOAK=1 \
+  BENCH_RESULTS_DIR="$PWD/bench/results/new-run" python3 bench/measure.py
+python3 bench/summarize.py bench/results/new-run
 ```
 
-`python3 bench/profile.py` captures the coordinated HTTP CPU/allocation profiles
-against running benchmark containers. It writes `http-after-*` artifacts and
-should run separately from throughput measurements. The harness leaves its
-containers available for inspection; remove only this test project with:
+Build images first with `docker compose -f bench/compose.yaml build backend firewall`. See [bench/README.md](bench/README.md) for workload semantics and isolation. The recorded dataset is the 0.3.4 baseline; choose a new output directory when measuring a later build.
 
-```sh
-docker compose -f bench/compose.yaml down -v
-```
+- [Complete case table and sample coverage](bench/results/v0.3.4/summary.md)
+- [Environment, image IDs and recorded source hashes](bench/results/v0.3.4/environment.json)
+- [Docker resource samples](bench/results/v0.3.4/docker-stats.jsonl)
+- [Admin samples](bench/results/v0.3.4/admin-samples.jsonl)
+- [Case exit statuses](bench/results/v0.3.4/exits.tsv)
 
-The load generator is closed-loop. Percentiles include all measured requests
-and use bounded histogram buckets with less than 1.6% rounding error. Throughput
-includes in-flight drain time. This is neither a fixed offered-arrival-rate test
-nor a coordinated-omission-corrected capacity test. GeoIP/Google datasets, live
-Redis, external TLS/ACME issuance, WAN clients, large uploads, arbitrary CVEs,
-and HTTP/2 or HTTP/3 were not load-tested here. The native proxy serves HTTP/1.1.
-
-`go test -race ./...`, `go vet ./...`, host build, Docker build, and browser QA
-passed. Wire tests also cover overload admission with the admin still available,
-stream/tunnel lifetimes, and failed 101 delivery/deadline/pipeline cleanup.
-
-The final profile identifies smaller remaining allocation candidates in hostname
-IP parsing and SID base64 construction. Those are future optimization options;
-they are not additional changes in this version and would need compatibility
-tests before implementation.
+Firewall image: `sha256:907fe667aca945ea0f60c2eb16c5529380a5fe023149a58e4c0fd6062fea4767`. Backend/client image: `sha256:f069344aa755b708c66eebc33c715c108851fc1f96afb2fe13472b116f35f614`.

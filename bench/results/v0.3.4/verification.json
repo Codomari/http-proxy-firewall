@@ -1,0 +1,7 @@
+{
+  "version": "0.3.4",
+  "server_header": "codomari/proxy-firewall/0.3.4",
+  "admin_branding": true,
+  "embedded_version_without_runtime_VERSION_file": true,
+  "private_override_absent_from_image": true
+}

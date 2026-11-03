@@ -105,7 +105,13 @@ func New(cfg config.Config, intelligence Intelligence, sessions *session.Service
 		trackInput:    cfg.Admin.Enabled,
 	}
 	e.general.Store(general)
-	if err := e.cloudflare.load(f.CloudflareHostsFile); err != nil {
+	var cloudflareErr error
+	if cfg.Source != nil {
+		cloudflareErr = e.cloudflare.loadYAML(cfg.Source)
+	} else {
+		cloudflareErr = e.cloudflare.load(f.CloudflareHostsFile)
+	}
+	if err := cloudflareErr; err != nil {
 		return nil, fmt.Errorf("load Cloudflare hostname settings: %w", err)
 	}
 	return e, nil

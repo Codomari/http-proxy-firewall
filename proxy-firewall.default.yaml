@@ -1,0 +1,128 @@
+# Public defaults. Put deployment values in the ignored override YAML.
+env:
+  - key: MAXMIND_LICENSE_KEY
+    value: ""
+  - key: MAXMIND_DATABASE_PATH
+    value: "files/geo.mmdb"
+  - key: LETSENCRYPT_EMAIL
+    value: ""
+  # Restrict automatic certificate issuance to your domains in production.
+  - key: PF_TLS_HOSTS
+    value: ""
+  - key: PF_TLS_ENABLED
+    value: "true"
+  - key: PF_TLS_ALLOW_LEGACY
+    value: "false"
+  - key: PF_TLS_CACHE_DIR
+    value: ".cache"
+  # Optional static TLS pair; leave both empty to use automatic certificates.
+  - key: PF_TLS_CERT_FILE
+    value: ""
+  - key: PF_TLS_KEY_FILE
+    value: ""
+  - key: PF_LISTEN
+    value: "0.0.0.0:80"
+  - key: PF_TLS_LISTEN
+    value: "0.0.0.0:443"
+  - key: PF_PROXY_TO
+    value: "http://127.0.0.1:8008"
+  # Optional host routing; unmatched hosts use PF_PROXY_TO.
+  - key: PF_UPSTREAM_ROUTES
+    value: ""
+  - key: PF_IPV4_REDIRECT
+    value: "https://hostinq.biz"
+
+  - key: IP_FILTER_WHITELIST
+    value: "127.0.0.1,::1"
+  - key: IP_FILTER_WHITELIST_NETWORKS
+    value: ""
+  - key: IP_FILTER_ALLOWED_COUNTRIES
+    value: "Azerbaijan,Turkey"
+  # Require the cookie checkpoint during DDoS penalties, even for whitelisted clients.
+  - key: IP_FILTER_WHITELIST_CHECKPOINT
+    value: "true"
+  - key: IP_FILTER_COUNTRIES_CHECKPOINT
+    value: "true"
+  # Only configured proxy peers may supply forwarding headers.
+  - key: PF_TRUSTED_PROXIES
+    value: ""
+  - key: PF_TRUST_CLOUDFLARE_HEADER
+    value: "false"
+  # Legacy JSON source used only by --migrate-config; active rules live below.
+  - key: PF_CLOUDFLARE_HOSTS_FILE
+    value: "files/cloudflare-hosts.json"
+  - key: DOS_DETECTOR_HOSTNAME_REQUEST_THRESHOLD
+    value: "200"
+  - key: DOS_DETECTOR_HOSTNAME_PENALTY_LIFETIME
+    value: "10m"
+  - key: PF_COOKIE_LIFETIME
+    value: "24h"
+  - key: PF_CACHE_CAPACITY
+    value: "100000"
+  - key: CVE_MITIGATOR_MAX_BODY_BYTES
+    value: "33554432"
+  - key: PF_MAX_BUFFERED_BYTES
+    value: "268435456"
+  - key: CVE_MITIGATOR_UPLOAD_PROGRESS_NAMES
+    value: ""
+  # Sample rejection logs per reason at most once per interval; 0s logs every rejection.
+  - key: PF_REJECTION_LOG_INTERVAL
+    value: "1s"
+
+  - key: PF_MAX_CONNECTIONS
+    value: "10000"
+  - key: PF_MAX_CONCURRENT_REQUESTS
+    value: "256"
+  - key: PF_UPSTREAM_MAX_CONNECTIONS
+    value: "256"
+  - key: PF_READ_TIMEOUT
+    value: "10m"
+  - key: PF_WRITE_TIMEOUT
+    value: "10m"
+  - key: PF_IDLE_TIMEOUT
+    value: "1m"
+  - key: PF_UPSTREAM_READ_TIMEOUT
+    value: "10m"
+  - key: PF_UPSTREAM_WRITE_TIMEOUT
+    value: "10m"
+  - key: PF_UPSTREAM_IDLE_TIMEOUT
+    value: "1m"
+
+  - key: PF_ENABLE_REDIS
+    value: "false"
+  - key: REDIS_ADDRESS
+    value: "redis:6379"
+  - key: REDIS_PASSWORD
+    value: ""
+  - key: REDIS_DB
+    value: "0"
+  - key: REDIS_TIMEOUT
+    value: "250ms"
+  - key: REDIS_QUEUE_SIZE
+    value: "1024"
+  - key: REDIS_WORKERS
+    value: "4"
+
+  - key: PF_METRICS
+    value: "false"
+  # One user:password entry per line; the credentials file supports multiple accounts.
+  - key: PF_ADMIN_CREDS_FILE
+    value: ".creds"
+  - key: PF_ADMIN_URI
+    value: "__pf/__admin"
+  - key: PF_ADMIN_MAX_HOSTS
+    value: "10000"
+  # Optional override: PF_ADMIN_ENABLED=false disables the admin interface.
+  - key: PF_SILENT
+    value: "true"
+  # Empty disables profiling; keep a loopback address when enabled.
+  - key: PF_PPROF_ADDRESS
+    value: "127.0.0.1:8068"
+  - key: PF_INTELLIGENCE_REFRESH_INTERVAL
+    value: "24h"
+  - key: PF_INTELLIGENCE_HTTP_TIMEOUT
+    value: "30s"
+
+rules: []
+
+debug: []

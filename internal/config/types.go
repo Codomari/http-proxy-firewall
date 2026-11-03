@@ -4,6 +4,8 @@ import "time"
 
 // Config is immutable after startup. Each section belongs to one component.
 type Config struct {
+	Source        *YAMLStore
+	environment   map[string]string
 	HTTP          HTTP
 	Proxy         Proxy
 	TLS           TLS

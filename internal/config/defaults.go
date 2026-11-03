@@ -1,8 +1,12 @@
 package config
 
-import "time"
+import (
+	buildinfo "http-proxy-firewall"
+	"time"
+)
 
-const ServerName = "pf"
+var ServerName = "codomari/proxy-firewall/" + buildinfo.Version
+
 const DefaultAdminURI = "__pf/__admin"
 
 func Defaults() Config {

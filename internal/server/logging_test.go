@@ -3,6 +3,8 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"io"
 	"log/slog"
@@ -82,5 +84,44 @@ func TestNativeTLSFailureLogsConnectionIP(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("native TLS failure did not emit a warning")
+	}
+}
+
+func TestTLSCertificateFailureLogsSNIHostnameAndReleasesConnectionMetadata(t *testing.T) {
+	cfg := serverConfig("http://127.0.0.1:1")
+	certFile, keyFile, _ := certificateFiles(t)
+	cfg.TLS.Enabled, cfg.TLS.CertificateFile, cfg.TLS.PrivateKeyFile = true, certFile, keyFile
+	s := newTestServer(t, cfg)
+	lines := make(connectionLogLines, 16)
+	s.app.Server().Logger = &safeLogger{logger: slog.New(slog.NewTextHandler(lines, nil)), hostname: s.connectionHostname}
+	if err := s.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: time.Second}, "tcp", s.TLSAddress().String(), &tls.Config{MinVersion: tls.VersionTLS12, ServerName: "api.example.test", RootCAs: x509.NewCertPool()})
+	if conn != nil {
+		conn.Close()
+	}
+	if err == nil {
+		t.Fatal("expected certificate verification failure")
+	}
+	select {
+	case line := <-lines:
+		if !strings.Contains(line, "client_ip=127.0.0.1") || !strings.Contains(line, "hostname=api.example.test") || !strings.Contains(line, "tls:") {
+			t.Fatalf("TLS failure lost SNI hostname: %s", line)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("TLS failure was not logged")
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		count := 0
+		s.hostnames.Range(func(_, _ any) bool { count++; return true })
+		if count == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("closed TLS connection retained hostname metadata")
+		}
+		time.Sleep(time.Millisecond)
 	}
 }

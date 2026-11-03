@@ -6,7 +6,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/etc/proxy-firewall
-# The application reads .env and proxy-firewall.conf from WorkingDirectory.
+# The application merges default and override YAML from WorkingDirectory.
 # make install replaces this fallback with max(1, floor(online CPUs * 2 / 5)).
 ExecStart=/usr/bin/env GOMAXPROCS=1 /etc/proxy-firewall/bin/proxy-firewall
 StandardOutput=append:/etc/proxy-firewall/log/proxy-firewall.log
@@ -19,9 +19,9 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-# Atomic .env saves require write access to its parent directory.
+# Atomic override YAML saves require write access to its parent directory.
 ReadWritePaths=/etc/proxy-firewall /etc/proxy-firewall/log /etc/proxy-firewall/files /etc/proxy-firewall/.cache /etc/proxy-firewall/.certs
-ReadOnlyPaths=/etc/proxy-firewall/bin -/etc/proxy-firewall/.creds -/etc/proxy-firewall/proxy-firewall.conf -/etc/proxy-firewall/LICENSE
+ReadOnlyPaths=/etc/proxy-firewall/bin -/etc/proxy-firewall/.creds -/etc/proxy-firewall/proxy-firewall.default.yaml -/etc/proxy-firewall/LICENSE
 LimitNOFILE=65535
 
 [Install]

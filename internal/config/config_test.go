@@ -145,7 +145,7 @@ func TestAdminCredentialsAndBounds(t *testing.T) {
 
 func TestLoadReadsRelativeCredentialsOnceAtStartup(t *testing.T) {
 	t.Chdir(t.TempDir())
-	for name, content := range map[string]string{".env": "PF_ADMIN_CREDS_FILE=.creds\n", ".creds": "operator:first:password\nsecond:other-password\n"} {
+	for name, content := range map[string]string{OverrideYAML: "env:\n  - key: PF_ADMIN_CREDS_FILE\n    value: .creds\n", ".creds": "operator:first:password\nsecond:other-password\n"} {
 		if err := os.WriteFile(name, []byte(content), 0600); err != nil {
 			t.Fatal(err)
 		}

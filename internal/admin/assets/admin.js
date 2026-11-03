@@ -269,9 +269,9 @@
       byId("ddos-threshold").value = String(data.ddos_threshold);
       generalRules.key = key;
     }
-    text("general-rules-status", data.available ? "Global rules · loaded from .env · saved changes apply immediately" : "General rules are unavailable.");
+    text("general-rules-status", data.available ? "Global rules · loaded from YAML · saved changes apply immediately" : "General rules are unavailable.");
     byId("general-rules-overrides").hidden = !data.overrides.length;
-    text("general-rules-overrides", data.overrides.length ? `Startup overrides in the process environment or proxy-firewall.conf take precedence after a restart: ${data.overrides.join(", ")}.` : "");
+    text("general-rules-overrides", data.overrides.length ? `Process environment overrides take precedence after a restart: ${data.overrides.join(", ")}.` : "");
   }
   async function pollGeneralRules() {
     if (generalRules.busy || generalRules.controller) return;
@@ -283,7 +283,7 @@
       if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
       if (generalRules.controller === controller && !controller.signal.aborted) renderGeneralRules(data);
     } catch (error) {
-      if (generalRules.controller === controller && !controller.signal.aborted) text("general-rules-status", `Unable to load .env settings: ${error.message}`);
+      if (generalRules.controller === controller && !controller.signal.aborted) text("general-rules-status", `Unable to load YAML settings: ${error.message}`);
     } finally {
       clearTimeout(timeout);
       if (generalRules.controller === controller) generalRules.controller = null;
@@ -312,7 +312,7 @@
       generalRules.dirty = false;
       generalRules.key = "";
       renderGeneralRules(data, true);
-      text("general-rules-feedback", "Saved to .env and applied");
+      text("general-rules-feedback", "Saved to override YAML and applied");
     } catch (error) {
       text("general-rules-error", error.name === "AbortError" ? "Save timed out. Reload settings to check whether it completed." : error.message);
       byId("general-rules-error").hidden = false;
@@ -335,14 +335,12 @@
     for (const host of data.hosts) {
       const row = document.createElement("tr");
       cell(row, host.hostname);
-      cell(row, "Cloudflare");
+      cell(row, "Behind CloudFlare");
       const action = cell(row, ""), button = document.createElement("button");
       button.type = "button";
-      button.setAttribute("role", "switch");
-      button.setAttribute("aria-checked", String(host.enabled));
-      button.setAttribute("aria-label", `Behind Cloudflare for ${host.hostname}`);
-      button.textContent = host.enabled ? "On" : "Off";
-      button.addEventListener("click", () => saveCloudflare(host.hostname, !host.enabled));
+      button.setAttribute("aria-label", `Remove Behind CloudFlare rule for ${host.hostname}`);
+      button.textContent = "Remove rule";
+      button.addEventListener("click", () => saveCloudflare(host.hostname, true));
       action.appendChild(button);
       fragment.appendChild(row);
     }
@@ -378,7 +376,7 @@
       }
     }
   }
-  async function saveCloudflare(hostname, enabled) {
+  async function saveCloudflare(hostname, remove = false) {
     if (cloudflare.busy) return;
     pauseRules();
     cloudflare.busy = true;
@@ -387,8 +385,8 @@
     byId("cloudflare-error").hidden = true;
     const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 10000);
     try {
-      const query = new URLSearchParams({hostname, enabled: String(enabled)});
-      const response = await fetch(`${base}/api/cloudflare-hosts?${query}`, {method: "POST", headers: {"X-PF-Admin": "1"}, credentials: "same-origin", cache: "no-store", signal: controller.signal});
+      const query = new URLSearchParams({hostname});
+      const response = await fetch(`${base}/api/cloudflare-hosts?${query}`, {method: remove ? "DELETE" : "POST", headers: {"X-PF-Admin": "1"}, credentials: "same-origin", cache: "no-store", signal: controller.signal});
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
       cloudflare.busy = false;
@@ -408,7 +406,7 @@
   }
   byId("cloudflare-form").addEventListener("submit", (event) => {
     event.preventDefault();
-    if (byId("rule-type").value === "cloudflare") saveCloudflare(byId("cloudflare-hostname").value, byId("cloudflare-enabled").checked);
+    if (byId("rule-type").value === "cloudflare") saveCloudflare(byId("cloudflare-hostname").value);
   });
   function renderDebug(status) {
     if (status.hostname !== debug.hostname || status.file !== debug.file) {
@@ -423,6 +421,15 @@
     text("debug-empty", status.hostname ? "No captured requests yet for this hostname and source rule. Waiting for matching traffic…" : "Enable a capture rule to see matching requests.");
     text("debug-capture-status", status.hostname ? `${status.enabled ? "Capturing" : "Disabled"} · ${status.hostname} · source: ${status.client_ip || "all IPs"} · ${status.file}${status.error ? ` · ${status.error}` : ""}` : "Debug is disabled. Enter a hostname to start capturing requests.");
     byId("debug-disable").disabled = debug.busy || !status.enabled;
+    const selector = byId("debug-capture"), options = document.createDocumentFragment();
+    for (const capture of status.captures || []) {
+      const option = document.createElement("option");
+      option.value = JSON.stringify([capture.hostname, capture.client_ip]);
+      option.textContent = `${capture.hostname} · ${capture.client_ip || "all sources"} · ${capture.enabled ? "enabled" : "disabled"}`;
+      options.appendChild(option);
+    }
+    selector.replaceChildren(options);
+    selector.value = JSON.stringify([status.hostname, status.client_ip]);
   }
   function pauseDebug() {
     clearTimeout(debug.timer);
@@ -463,7 +470,7 @@
     byId("debug-error").hidden = true;
     const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 10000);
     try {
-      const query = new URLSearchParams({hostname: byId("debug-hostname").value, client_ip: byId("debug-client-ip").value});
+      const query = new URLSearchParams({hostname: disable ? debug.hostname : byId("debug-hostname").value, client_ip: disable ? debug.clientIP : byId("debug-client-ip").value});
       const response = await fetch(`${base}/api/debug?${query}`, {method: disable ? "DELETE" : "POST", headers: {"X-PF-Admin": "1"}, credentials: "same-origin", cache: "no-store", signal: controller.signal});
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
@@ -481,9 +488,20 @@
   }
   byId("debug-form").addEventListener("submit", (event) => { event.preventDefault(); changeDebug(false); });
   byId("debug-disable").addEventListener("click", () => changeDebug(true));
+  byId("debug-capture").addEventListener("change", () => {
+    if (!byId("debug-capture").value) return;
+    pauseDebug();
+    [debug.hostname, debug.clientIP] = JSON.parse(byId("debug-capture").value);
+    debug.file = ""; debug.cursor = ""; debug.limited = false; debug.unparsed = false;
+    byId("debug-rows").replaceChildren();
+    byId("debug-hostname").value = debug.hostname;
+    byId("debug-client-ip").value = debug.clientIP;
+    pollDebug();
+  });
   const tabNames = ["monitoring", "logs", "rules", "debug", "hosts"];
   function selectTab(name, focus = false) {
     activeTab = name;
+    document.title = `Codomari | Proxy-Firewall | ${name === "hosts" ? "Host Activity" : name[0].toUpperCase() + name.slice(1)}`;
     for (const candidate of tabNames) {
       const button = byId(`tab-${candidate}`), selected = candidate === name;
       button.setAttribute("aria-selected", String(selected));

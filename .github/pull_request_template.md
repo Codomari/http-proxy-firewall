@@ -18,6 +18,6 @@ If installation changes, explain how existing configuration and runtime data are
 - [ ] Behavioral fixes include a regression test.
 - [ ] Relevant documentation, examples and changelog entries are updated.
 - [ ] I ran `make check` or explained skipped checks above.
-- [ ] No real `.env`, `.creds`, deployment configuration, secrets or runtime data are included.
+- [ ] No private override YAML, `.creds`, deployment configuration, secrets or runtime data are included.
 
 <!-- Coordinate security fixes privately with anar.k.jafarov@gmail.com before publishing details. -->

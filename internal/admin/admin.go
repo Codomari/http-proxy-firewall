@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 
+	buildinfo "http-proxy-firewall"
+
 	"github.com/gofiber/fiber/v3"
 
 	"http-proxy-firewall/internal/config"
@@ -80,7 +82,13 @@ func New(cfg config.Config, registry *monitoring.Registry, penalties PenaltySour
 	h.debug.dir = "log"
 	h.cloudflare, _ = penalties.(cloudflareSource)
 	h.general, _ = penalties.(generalRulesSource)
-	h.generalFile.Path = ".env"
+	h.generalFile.Path = config.OverrideYAML
+	h.generalFile.Store = cfg.Source
+	if cfg.Source != nil {
+		if err := h.debug.loadConfig(cfg.Source); err != nil {
+			return nil, err
+		}
+	}
 	for _, account := range cfg.Admin.Accounts {
 		if account.User == "" || account.Password == "" {
 			return nil, errors.New("admin accounts require both user and password")
@@ -95,6 +103,7 @@ func New(cfg config.Config, registry *monitoring.Registry, penalties PenaltySour
 		if err != nil {
 			return nil, errors.New("embedded admin asset is unavailable")
 		}
+		data = bytes.ReplaceAll(data, []byte("__PF_VERSION__"), []byte(buildinfo.Version))
 		h.assets[name] = bytes.ReplaceAll(data, []byte(BasePath), []byte(basePath))
 	}
 	return h, nil
