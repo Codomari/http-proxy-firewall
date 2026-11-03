@@ -1,6 +1,6 @@
 # http-proxy-firewall
 
-Version **0.1.2** · [Changelog](CHANGELOG.md) · [MIT license](LICENSE)
+Version **0.2.0** · [Changelog](CHANGELOG.md) · [MIT license](LICENSE)
 
 A Layer 7 firewall using **Uber Fx 1.24** for dependency injection and lifecycle management, **Fiber 3.6** for HTTP handling, and a pooled native fasthttp upstream client. Requires **Go 1.27 or newer**.
 
