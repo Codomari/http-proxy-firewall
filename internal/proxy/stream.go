@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"http-proxy-firewall/internal/monitoring"
+	"http-proxy-firewall/internal/observability"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/valyala/fasthttp"
@@ -29,7 +30,7 @@ func forwardResponse(c fiber.Ctx, response *fasthttp.Response, release func()) {
 		body = bytes.NewReader(response.Body())
 	}
 	stream := &responseStream{Reader: body, response: response, release: release}
-	c.Response().SetBodyStream(monitoring.WrapStream(c, stream, response.StatusCode()), response.Header.ContentLength())
+	c.Response().SetBodyStream(observability.WrapResponseStream(c, monitoring.WrapStream(c, stream, response.StatusCode())), response.Header.ContentLength())
 	// Keep ordinary headers in the existing bounded writer buffer so small
 	// bodies share one write. Unknown-length streams and SSE need prompt headers.
 	mediaType, _, _ := bytes.Cut(response.Header.ContentType(), []byte(";"))

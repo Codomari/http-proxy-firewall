@@ -19,6 +19,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"http-proxy-firewall/internal/config"
 	"http-proxy-firewall/internal/monitoring"
+	"http-proxy-firewall/internal/observability"
 )
 
 func TestDebugHostnamePatternsAndSafeFilenames(t *testing.T) {
@@ -267,6 +268,37 @@ func TestDebugConcurrentAppendsDisableAndFileFailure(t *testing.T) {
 	}
 }
 
+func TestDebugCapturesFinalErrorHandlerResponse(t *testing.T) {
+	h := &Handler{}
+	h.debug.dir = t.TempDir()
+	status, err := h.debug.set("example.com", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	app := fiber.New(fiber.Config{ErrorHandler: func(c fiber.Ctx, err error) error {
+		calls++
+		c.Set("X-Error", "final-response")
+		return c.Status(502).SendString("upstream unavailable")
+	}})
+	app.Use(h.DebugMiddleware(func(fiber.Ctx) string { return "203.0.113.8" }))
+	app.Use(func(fiber.Ctx) error { return fiber.ErrInternalServerError })
+	response, err := app.Test(httptest.NewRequest("GET", "http://example.com/error", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body, _ := io.ReadAll(response.Body)
+	data, err := os.ReadFile(status.File)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := parseDebugEntry(strings.TrimSpace(string(data)))
+	if calls != 1 || response.StatusCode != 502 || string(body) != "upstream unavailable" || entry.Response == nil || entry.Response.Status != 502 || entry.Response.Body != string(body) {
+		t.Fatalf("final error response changed or was not captured: calls=%d entry=%+v", calls, entry)
+	}
+}
+
 func TestDebugStructuredEntriesPreserveRequestData(t *testing.T) {
 	stamp := "2026-11-03T12:34:56.123456Z"
 	url := `/MiXeD%2fPath//?q=%2f&plus=+&quote="`
@@ -275,6 +307,21 @@ func TestDebugStructuredEntriesPreserveRequestData(t *testing.T) {
 	want := debugEntry{Timestamp: stamp, ClientIP: "2001:db8::8", Hostname: "api.example.com", Method: "CUSTOM", URL: url, Headers: []debugHeader{{Name: "Host", Value: "api.example.com"}, {Name: "X-Test", Value: header}, {Name: "X-Test", Value: "second"}}}
 	if got := parseDebugEntry(line); !reflect.DeepEqual(got, want) {
 		t.Fatalf("structured entry changed request data: got=%+v want=%+v", got, want)
+	}
+	result := debugResult{DurationMS: 123.456, Response: observability.CapturedResponse{Status: 403, Headers: []debugHeader{{Name: "X-Test", Value: header}}, Bytes: 20, Body: "<script>\n] | \"body\"", BodyEncoding: "utf-8"}}
+	payload, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	full := line + " | " + string(payload)
+	got := parseDebugEntry(full)
+	if got.Raw != nil || got.DurationMS == nil || *got.DurationMS != result.DurationMS || !reflect.DeepEqual(got.Response, &result.Response) {
+		t.Fatalf("response metadata did not round trip: %+v", got)
+	}
+	for _, invalid := range []string{full[:len(full)-1], line + " | {}", line + " | null", line + " trailing text", strings.Replace(full, "123.456", "-1", 1)} {
+		if got := parseDebugEntry(invalid); got.Raw == nil || *got.Raw != invalid {
+			t.Fatalf("malformed result was accepted: %q", invalid)
+		}
 	}
 	for _, line := range []string{"", "legacy or truncated log entry", "[invalid-date] FROM: x", strings.TrimSuffix(line, "]"), strings.Replace(line, `"second"`, `unquoted`, 1)} {
 		got := parseDebugEntry(line)

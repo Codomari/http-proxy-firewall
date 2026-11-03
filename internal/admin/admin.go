@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -48,16 +49,19 @@ type credentialHashes struct {
 }
 
 type Handler struct {
-	basePath   string
-	enabled    bool
-	accounts   []credentialHashes
-	registry   *monitoring.Registry
-	penalties  PenaltySource
-	services   ServiceSources
-	assets     map[string][]byte
-	logs       logTail
-	debug      debugLog
-	cloudflare cloudflareSource
+	basePath    string
+	enabled     bool
+	accounts    []credentialHashes
+	registry    *monitoring.Registry
+	penalties   PenaltySource
+	services    ServiceSources
+	assets      map[string][]byte
+	logs        logTail
+	debug       debugLog
+	cloudflare  cloudflareSource
+	general     generalRulesSource
+	generalFile config.GeneralRulesFile
+	generalMu   sync.Mutex
 }
 
 func New(cfg config.Config, registry *monitoring.Registry, penalties PenaltySource, logger *slog.Logger, services ...ServiceSources) (*Handler, error) {
@@ -75,6 +79,8 @@ func New(cfg config.Config, registry *monitoring.Registry, penalties PenaltySour
 	h.logs.path = "log/proxy-firewall.log"
 	h.debug.dir = "log"
 	h.cloudflare, _ = penalties.(cloudflareSource)
+	h.general, _ = penalties.(generalRulesSource)
+	h.generalFile.Path = ".env"
 	for _, account := range cfg.Admin.Accounts {
 		if account.User == "" || account.Password == "" {
 			return nil, errors.New("admin accounts require both user and password")
@@ -164,8 +170,8 @@ func ownedPath(raw, basePath string) (string, bool) {
 }
 
 func (h *Handler) serve(c fiber.Ctx, requestPath string) error {
-	// Admin never consumes uploads. Closing avoids an unread-body drain after
-	// early authentication/method responses, including chunked requests.
+	// Only the authenticated general settings endpoint consumes a bounded JSON
+	// body. Close other uploads without an unread-body drain.
 	if c.Request().Header.ContentLength() != 0 {
 		c.Response().Header.SetConnectionClose()
 	}
@@ -186,6 +192,9 @@ func (h *Handler) serve(c fiber.Ctx, requestPath string) error {
 	}
 	if requestPath == h.basePath+"/api/cloudflare-hosts" {
 		return h.serveCloudflare(c)
+	}
+	if requestPath == h.basePath+"/api/general-rules" {
+		return h.serveGeneralRules(c)
 	}
 	if c.Method() != fiber.MethodGet && c.Method() != fiber.MethodHead {
 		c.Set("Allow", "GET, HEAD")

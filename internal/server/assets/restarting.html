@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>540 · Server restarting</title>
+  <style>{{STYLE}}</style>
+</head>
+<body>
+  <main class="restart-card" aria-labelledby="restart-title">
+    <p class="eyebrow">HTTP 540</p>
+    <div class="restart-symbol" aria-hidden="true">↻</div>
+    <h1 id="restart-title">Server restarting</h1>
+    <p class="message">We’ll reconnect you automatically when the server is ready.</p>
+    <div class="countdown" aria-hidden="true"><span id="countdown">3</span><span class="seconds">seconds</span></div>
+    <p id="restart-status" class="detail" role="status">Retrying in 3 seconds…</p>
+    <a id="retry-now" href="">Try again now</a>
+    <noscript><p class="detail">Enable JavaScript for automatic retry, or use the link above.</p></noscript>
+  </main>
+  <script>{{SCRIPT}}</script>
+</body>
+</html>

@@ -108,6 +108,10 @@ func (s *Server) configureHTTPServer(upstream *proxy.Handler) {
 		}
 	}
 	fast.Handler = func(ctx *fasthttp.RequestCtx) {
+		if s.restarting.Load() {
+			serveRestarting(ctx)
+			return
+		}
 		method := string(ctx.Request.Header.Method())
 		known := method == extensionMethod
 		for _, candidate := range fiber.DefaultMethods {

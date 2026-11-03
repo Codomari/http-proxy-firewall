@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"http-proxy-firewall/internal/monitoring"
+	"http-proxy-firewall/internal/observability"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/valyala/fasthttp"
@@ -83,7 +84,7 @@ func (h *Handler) upgrade(c fiber.Ctx, request *fasthttp.Request, protocol strin
 			size = -1
 		}
 		stream := &upgradeResponseStream{ReadCloser: response.Body, close: func() { _ = conn.Close(); h.untrack(conn); release() }}
-		c.Response().SetBodyStream(monitoring.WrapStream(c, stream, response.StatusCode), size)
+		c.Response().SetBodyStream(observability.WrapResponseStream(c, monitoring.WrapStream(c, stream, response.StatusCode)), size)
 		c.Response().ImmediateHeaderFlush = true
 		transferred = true
 		return nil

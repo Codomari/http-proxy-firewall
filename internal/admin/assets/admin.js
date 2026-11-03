@@ -223,16 +223,25 @@
       const row = document.createElement("tr");
       if (entry.raw !== undefined) {
         const content = cell(row, "Unparsed log entry"), raw = document.createElement("pre");
-        content.colSpan = 6;
+        content.colSpan = 9;
         raw.textContent = entry.raw;
         content.appendChild(raw);
         debug.unparsed = true;
       } else {
         for (const value of [entry.timestamp, entry.client_ip, entry.hostname, entry.method, entry.url]) cell(row, value);
+        cell(row, entry.duration_ms == null ? "—" : `${Number(entry.duration_ms).toFixed(2)} ms`);
+        cell(row, entry.response ? entry.response.status : "—");
         const headers = cell(row, ""), details = document.createElement("details"), summary = document.createElement("summary"), values = document.createElement("pre");
         summary.textContent = `${number.format(entry.headers.length)} headers`;
         values.textContent = entry.headers.map(header => `${header.name}: ${header.value}`).join("\n");
         details.appendChild(summary); details.appendChild(values); headers.appendChild(details);
+        const response = cell(row, "");
+        if (entry.response) {
+          const result = entry.response, details = document.createElement("details"), summary = document.createElement("summary"), values = document.createElement("pre");
+          summary.textContent = `${number.format(result.headers.length)} headers · ${bytes(result.bytes)} body${result.body_truncated ? " · preview truncated" : ""}${result.error ? " · transfer failed" : ""}`;
+          values.textContent = result.headers.map(header => `${header.name}: ${header.value}`).join("\n") + `\n\nBody${result.body_encoding === "base64" ? " (base64)" : ""}${result.body_truncated ? " (first 16 KiB)" : ""}:\n${result.body || "(empty)"}${result.error ? `\n\nTransfer error: ${result.error}` : ""}`;
+          details.appendChild(summary); details.appendChild(values); response.appendChild(details);
+        } else response.textContent = "—";
       }
       fragment.appendChild(row);
     }
@@ -246,6 +255,74 @@
     byId("debug-empty").hidden = body.childElementCount > 0;
     text("debug-status", `${debug.enabled ? "Live" : "Capture disabled"} · ${number.format(body.childElementCount)} / 10,000 requests · pulls every 2 seconds${data.reset && body.childElementCount > data.entries.length ? " · log restarted or rotated" : ""}${debug.limited ? " · some log content was truncated" : ""}${debug.unparsed ? " · unparsed entries shown as text" : ""}`);
   }
+  const generalRules = {busy: false, dirty: false, key: "", available: false, controller: null};
+  function renderGeneralRules(data, saved = false) {
+    generalRules.available = data.available;
+    byId("general-rules-save").disabled = generalRules.busy || !data.available;
+    const key = JSON.stringify(data);
+    if ((!generalRules.dirty || saved) && key !== generalRules.key) {
+      byId("whitelist-ips").value = data.whitelist_ips.join("\n");
+      byId("whitelist-networks").value = data.whitelist_networks.join("\n");
+      byId("allowed-countries").value = data.allowed_countries.join("\n");
+      byId("ip-checkpoint").checked = data.ip_checkpoint;
+      byId("country-checkpoint").checked = data.country_checkpoint;
+      byId("ddos-threshold").value = String(data.ddos_threshold);
+      generalRules.key = key;
+    }
+    text("general-rules-status", data.available ? "Global rules · loaded from .env · saved changes apply immediately" : "General rules are unavailable.");
+    byId("general-rules-overrides").hidden = !data.overrides.length;
+    text("general-rules-overrides", data.overrides.length ? `Startup overrides in the process environment or proxy-firewall.conf take precedence after a restart: ${data.overrides.join(", ")}.` : "");
+  }
+  async function pollGeneralRules() {
+    if (generalRules.busy || generalRules.controller) return;
+    const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 10000);
+    generalRules.controller = controller;
+    try {
+      const response = await fetch(`${base}/api/general-rules`, {credentials: "same-origin", cache: "no-store", signal: controller.signal});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      if (generalRules.controller === controller && !controller.signal.aborted) renderGeneralRules(data);
+    } catch (error) {
+      if (generalRules.controller === controller && !controller.signal.aborted) text("general-rules-status", `Unable to load .env settings: ${error.message}`);
+    } finally {
+      clearTimeout(timeout);
+      if (generalRules.controller === controller) generalRules.controller = null;
+    }
+  }
+  byId("general-rules-form").addEventListener("input", () => {
+    generalRules.dirty = true;
+    text("general-rules-feedback", "Unsaved changes");
+  });
+  byId("general-rules-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    if (generalRules.busy || !generalRules.available) return;
+    if (generalRules.controller) { generalRules.controller.abort(); generalRules.controller = null; }
+    generalRules.busy = true;
+    byId("general-rules-save").disabled = true;
+    byId("general-rules-error").hidden = true;
+    const list = id => byId(id).value.split(/[,\r\n]+/).map(value => value.trim()).filter(Boolean);
+    const settings = {whitelist_ips: list("whitelist-ips"), whitelist_networks: list("whitelist-networks"), allowed_countries: list("allowed-countries"), ip_checkpoint: byId("ip-checkpoint").checked, country_checkpoint: byId("country-checkpoint").checked, ddos_threshold: Number(byId("ddos-threshold").value)};
+    const inputs = byId("general-rules-form").querySelectorAll("input, textarea");
+    for (const input of inputs) input.disabled = true;
+    const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetch(`${base}/api/general-rules`, {method: "POST", headers: {"X-PF-Admin": "1", "Content-Type": "application/json"}, credentials: "same-origin", cache: "no-store", body: JSON.stringify(settings), signal: controller.signal});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      generalRules.dirty = false;
+      generalRules.key = "";
+      renderGeneralRules(data, true);
+      text("general-rules-feedback", "Saved to .env and applied");
+    } catch (error) {
+      text("general-rules-error", error.name === "AbortError" ? "Save timed out. Reload settings to check whether it completed." : error.message);
+      byId("general-rules-error").hidden = false;
+    } finally {
+      clearTimeout(timeout);
+      generalRules.busy = false;
+      for (const input of inputs) input.disabled = false;
+      byId("general-rules-save").disabled = !generalRules.available;
+    }
+  });
   const cloudflare = {busy: false, key: "", timer: null, controller: null};
   function renderCloudflare(data) {
     if (!data || cloudflare.busy) return;
@@ -278,9 +355,11 @@
   function pauseRules() {
     clearTimeout(cloudflare.timer);
     if (cloudflare.controller) { cloudflare.controller.abort(); cloudflare.controller = null; }
+    if (generalRules.controller) { generalRules.controller.abort(); generalRules.controller = null; }
   }
   async function pollRules() {
     if (activeTab !== "rules" || document.hidden || cloudflare.controller || cloudflare.busy) return;
+    pollGeneralRules();
     clearTimeout(cloudflare.timer);
     const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 10000);
     cloudflare.controller = controller;

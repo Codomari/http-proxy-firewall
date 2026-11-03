@@ -82,6 +82,10 @@ class InstallTests(unittest.TestCase):
         for stream in ("StandardOutput", "StandardError"):
             self.assertIn(f"{stream}=append:/etc/proxy-firewall/log/proxy-firewall.log", unit)
         self.assertIn("/etc/proxy-firewall/.certs", unit)
+        self.assertIn("ReadWritePaths=/etc/proxy-firewall ", unit)
+        self.assertIn("ReadOnlyPaths=/etc/proxy-firewall/bin", unit)
+        for protected in (".creds", "proxy-firewall.conf", "LICENSE"):
+            self.assertIn(f"-/etc/proxy-firewall/{protected}", unit)
         self.assertNotIn("-v2", unit)
 
     def test_reinstall_preserves_everything_except_binary(self):

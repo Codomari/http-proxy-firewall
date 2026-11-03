@@ -13,6 +13,7 @@ import (
 	"net/netip"
 	"path"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -29,21 +30,20 @@ type Intelligence interface {
 }
 
 type Engine struct {
-	limits           cve2026109618.Limits
-	uploadNames      []string
-	whitelist        []netip.Prefix
-	trustedProxies   []netip.Prefix
-	allowedCountries map[string]struct{}
-	trustCloudflare  bool
-	cloudflare       cloudflareSettings
-	intelligence     Intelligence
-	sessions         *session.Service
-	logger           *slog.Logger
-	rejectionLogs    rejectionSampler
-	budget           byteBudget
-	detector         detector
-	now              func() time.Time
-	trackInput       bool
+	limits          cve2026109618.Limits
+	uploadNames     []string
+	trustedProxies  []netip.Prefix
+	general         atomic.Pointer[generalRules]
+	trustCloudflare bool
+	cloudflare      cloudflareSettings
+	intelligence    Intelligence
+	sessions        *session.Service
+	logger          *slog.Logger
+	rejectionLogs   rejectionSampler
+	budget          byteBudget
+	detector        detector
+	now             func() time.Time
+	trackInput      bool
 }
 
 func New(cfg config.Config, intelligence Intelligence, sessions *session.Service, logger *slog.Logger) (*Engine, error) {
@@ -78,7 +78,7 @@ func New(cfg config.Config, intelligence Intelligence, sessions *session.Service
 	if f.RejectionLogInterval < 0 {
 		return nil, errors.New("rejection log interval cannot be negative")
 	}
-	whitelist, err := parseNetworks(append(append([]string{"127.0.0.0/8", "::1/128"}, f.WhitelistNetworks...), f.WhitelistIPs...))
+	general, err := compileGeneralRules(config.GeneralRulesFromFirewall(f))
 	if err != nil {
 		return nil, err
 	}
@@ -92,18 +92,10 @@ func New(cfg config.Config, intelligence Intelligence, sessions *session.Service
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	countries := make(map[string]struct{}, len(f.AllowedCountries))
-	for _, country := range f.AllowedCountries {
-		country = strings.ToLower(strings.TrimSpace(country))
-		if country == "" {
-			continue
-		}
-		countries[country] = struct{}{}
-	}
 	e := &Engine{
-		limits:      cve2026109618.Limits{MaxBodyBytes: f.MaxBodyBytes},
-		uploadNames: append([]string(nil), f.UploadProgressNames...),
-		whitelist:   whitelist, trustedProxies: trusted, allowedCountries: countries,
+		limits:          cve2026109618.Limits{MaxBodyBytes: f.MaxBodyBytes},
+		uploadNames:     append([]string(nil), f.UploadProgressNames...),
+		trustedProxies:  trusted,
 		trustCloudflare: f.TrustCloudflareHeader,
 		intelligence:    intelligence, sessions: sessions, logger: logger,
 		rejectionLogs: rejectionSampler{interval: f.RejectionLogInterval},
@@ -112,6 +104,7 @@ func New(cfg config.Config, intelligence Intelligence, sessions *session.Service
 		now:           time.Now,
 		trackInput:    cfg.Admin.Enabled,
 	}
+	e.general.Store(general)
 	if err := e.cloudflare.load(f.CloudflareHostsFile); err != nil {
 		return nil, fmt.Errorf("load Cloudflare hostname settings: %w", err)
 	}
@@ -152,8 +145,8 @@ func (e *Engine) Handler(c fiber.Ctx) error {
 }
 
 func (e *Engine) bypass(ctx context.Context, address netip.Addr) bool {
-	if containsAddress(e.whitelist, address) {
-		return true
+	if matched, bypass := e.whitelistBypass(ctx, address); matched {
+		return bypass
 	}
 	if e.intelligence == nil {
 		return false
@@ -161,12 +154,7 @@ func (e *Engine) bypass(ctx context.Context, address netip.Addr) bool {
 	if e.intelligence.IsGoogleBot(address) {
 		return true
 	}
-	if len(e.allowedCountries) == 0 {
-		return false
-	}
-	country := strings.ToLower(strings.TrimSpace(e.intelligence.Country(ctx, address)))
-	_, allowed := e.allowedCountries[country]
-	return allowed
+	return false
 }
 
 func (e *Engine) challenge(c fiber.Ctx, host string) error {

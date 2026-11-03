@@ -50,6 +50,8 @@ type Firewall struct {
 	WhitelistIPs          []string
 	WhitelistNetworks     []string
 	AllowedCountries      []string
+	WhitelistCheckpoint   bool
+	CountryCheckpoint     bool
 	TrustedProxies        []string
 	TrustCloudflareHeader bool
 	CloudflareHostsFile   string

@@ -20,8 +20,9 @@ func Defaults() Config {
 		TLS: TLS{Enabled: true, CacheDir: ".cache"},
 		Firewall: Firewall{
 			MaxBodyBytes: 32 << 20, MaxBufferedBytes: 256 << 20,
-			WhitelistNetworks: []string{"127.0.0.0/8", "::1/128"},
-			RequestThreshold:  200, SamplingWindow: 10 * time.Second, PenaltyLifetime: 10 * time.Minute,
+			WhitelistNetworks:   []string{"127.0.0.0/8", "::1/128"},
+			WhitelistCheckpoint: true, CountryCheckpoint: true,
+			RequestThreshold: 200, SamplingWindow: 10 * time.Second, PenaltyLifetime: 10 * time.Minute,
 			CookieLifetime: 24 * time.Hour, CacheCapacity: 100000,
 			RejectionLogInterval: time.Second,
 			CloudflareHostsFile:  "files/cloudflare-hosts.json",

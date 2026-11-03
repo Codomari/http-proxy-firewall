@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.5
+
+Five features added since 0.2.0; the patch number increases by the feature count.
+
+### Added
+
+- Debug request duration, final response status/headers, body byte counts, bounded text/base64 previews, streaming completion and transfer errors, with older capture compatibility.
+- Embedded HTTP 540 Server restarting screen during proxy-firewall shutdown, with a repeating three-second countdown and recovery probes that keep the page visible through connection failures. Upstream errors retain their existing responses.
+- Global IP/network/country whitelist settings at the top of Rules, read from and saved atomically to .env while preserving unrelated configuration; changes apply immediately.
+- Separate checkboxes controlling the cookie checkpoint for whitelisted IPs/networks and countries during DDoS penalties. Both default to enabled; CVE/body and bot-query checks always apply, and an enabled checkpoint takes priority when both lists match.
+- Editable DDoS request-rate threshold in General settings, saved to `DOS_DETECTOR_HOSTNAME_REQUEST_THRESHOLD` in .env and applied immediately without resetting existing penalties.
+
+### Changed
+
+- Increment the patch number by the number of features added since the preceding commit, retaining the major/minor numbers: 0.2.0 + 3 features = 0.2.3, then + 5 = 0.2.8.
+- Allow atomic .env updates in the systemd sandbox while keeping the executable, credentials and other deployment configuration read-only.
+
 ## 0.2.0
 
 ### Added

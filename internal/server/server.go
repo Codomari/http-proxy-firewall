@@ -12,6 +12,7 @@ import (
 	"net/netip"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"http-proxy-firewall/internal/admin"
@@ -39,6 +40,7 @@ type Server struct {
 	tlsAddress  net.Addr
 	started     bool
 	stopping    bool
+	restarting  atomic.Bool
 	errors      chan error
 	wg          sync.WaitGroup
 }
@@ -281,6 +283,8 @@ func (s *Server) Stop(ctx context.Context) error {
 	if !started {
 		return nil
 	}
+	s.restarting.Store(true)
+	waitForRestartNotice(ctx)
 	// Closing bound listeners also handles Stop racing before a Serve goroutine
 	// has registered its listener with the underlying HTTP server.
 	for _, listener := range listeners {

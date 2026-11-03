@@ -114,6 +114,8 @@ func (r *environment) applyFirewall(settings *Firewall) {
 	settings.WhitelistIPs = r.csv("IP_FILTER_WHITELIST")
 	settings.WhitelistNetworks = append(settings.WhitelistNetworks, r.csv("IP_FILTER_WHITELIST_NETWORKS")...)
 	settings.AllowedCountries = r.csv("IP_FILTER_ALLOWED_COUNTRIES")
+	settings.WhitelistCheckpoint = r.boolean("IP_FILTER_WHITELIST_CHECKPOINT", settings.WhitelistCheckpoint)
+	settings.CountryCheckpoint = r.boolean("IP_FILTER_COUNTRIES_CHECKPOINT", settings.CountryCheckpoint)
 	settings.TrustedProxies = r.csv("PF_TRUSTED_PROXIES")
 	settings.TrustCloudflareHeader = r.boolean("PF_TRUST_CLOUDFLARE_HEADER", false)
 	settings.CloudflareHostsFile = r.text("PF_CLOUDFLARE_HOSTS_FILE", settings.CloudflareHostsFile)

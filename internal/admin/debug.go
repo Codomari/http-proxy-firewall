@@ -2,6 +2,7 @@ package admin
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/netip"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"http-proxy-firewall/internal/firewall"
+	"http-proxy-firewall/internal/observability"
 )
 
 type debugStatus struct {
@@ -25,19 +27,23 @@ type debugStatus struct {
 	Error    string `json:"error,omitempty"`
 }
 
-type debugHeader struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
+type debugHeader = observability.CapturedHeader
+
+type debugResult struct {
+	DurationMS float64                        `json:"duration_ms"`
+	Response   observability.CapturedResponse `json:"response"`
 }
 
 type debugEntry struct {
-	Timestamp string        `json:"timestamp"`
-	ClientIP  string        `json:"client_ip"`
-	Hostname  string        `json:"hostname"`
-	Method    string        `json:"method"`
-	URL       string        `json:"url"`
-	Headers   []debugHeader `json:"headers"`
-	Raw       *string       `json:"raw,omitempty"`
+	Timestamp  string                          `json:"timestamp"`
+	ClientIP   string                          `json:"client_ip"`
+	Hostname   string                          `json:"hostname"`
+	Method     string                          `json:"method"`
+	URL        string                          `json:"url"`
+	Headers    []debugHeader                   `json:"headers"`
+	Raw        *string                         `json:"raw,omitempty"`
+	DurationMS *float64                        `json:"duration_ms,omitempty"`
+	Response   *observability.CapturedResponse `json:"response,omitempty"`
 }
 
 type debugBatch struct {
@@ -71,7 +77,7 @@ func parseDebugEntry(line string) debugEntry {
 		return fallback
 	}
 	target, rest, ok := strings.Cut(rest, " [")
-	if !ok || target == "" || !strings.HasSuffix(rest, "]") {
+	if !ok || target == "" {
 		return fallback
 	}
 	method, err := strconv.Unquote(`"` + method + `"`)
@@ -83,8 +89,7 @@ func parseDebugEntry(line string) debugEntry {
 		return fallback
 	}
 	entry := debugEntry{Timestamp: stamp, ClientIP: ip, Hostname: host, Method: method, URL: target, Headers: []debugHeader{}}
-	rest = rest[:len(rest)-1]
-	for rest != "" {
+	for !strings.HasPrefix(rest, "]") {
 		name, value, ok := strings.Cut(rest, ": ")
 		if !ok || name == "" {
 			return fallback
@@ -103,12 +108,21 @@ func parseDebugEntry(line string) debugEntry {
 		}
 		entry.Headers = append(entry.Headers, debugHeader{Name: name, Value: decoded})
 		rest = value[len(quoted):]
-		if rest != "" {
+		if !strings.HasPrefix(rest, "]") {
 			rest, ok = strings.CutPrefix(rest, ", ")
 			if !ok || rest == "" {
 				return fallback
 			}
 		}
+	}
+	rest = rest[1:]
+	if rest != "" {
+		payload, ok := strings.CutPrefix(rest, " | ")
+		var result debugResult
+		if !ok || json.Unmarshal([]byte(payload), &result) != nil || result.DurationMS < 0 || result.Response.Status < 100 || result.Response.Status > 599 || result.Response.Headers == nil || (result.Response.BodyEncoding != "utf-8" && result.Response.BodyEncoding != "base64") {
+			return fallback
+		}
+		entry.DurationMS, entry.Response = &result.DurationMS, &result.Response
 	}
 	return entry
 }
@@ -206,33 +220,50 @@ func (d *debugLog) snapshot(disable bool) debugStatus {
 	return d.status
 }
 
-// DebugMiddleware captures original request metadata before any firewall or
-// upstream mutation, without reading bodies. Admin traffic is handled earlier.
+// DebugMiddleware snapshots original request metadata before firewall/upstream
+// mutation, then logs the completed response. Admin traffic is handled earlier.
 func (h *Handler) DebugMiddleware(clientIP func(fiber.Ctx) string) fiber.Handler {
 	return func(c fiber.Ctx) error {
-		if h.debug.active.Load() {
-			h.debug.capture(c, clientIP)
+		if !h.debug.active.Load() {
+			return c.Next()
 		}
-		return c.Next()
+		started := time.Now()
+		line, tail := h.debug.capture(c, clientIP, started)
+		if tail == nil {
+			return c.Next()
+		}
+		capture := observability.CaptureResponse(c, started, func(duration time.Duration, response observability.CapturedResponse) {
+			result, err := json.Marshal(debugResult{DurationMS: float64(duration) / float64(time.Millisecond), Response: response})
+			if err == nil {
+				h.debug.append(tail, line+" | "+string(result)+"\n")
+			}
+		})
+		err := c.Next()
+		if err != nil {
+			// Finalize Fiber errors before capturing their actual status and body.
+			err = c.App().ErrorHandler(c, err)
+		}
+		capture.Prepare(c)
+		return err
 	}
 }
 
-func (d *debugLog) capture(c fiber.Ctx, clientIP func(fiber.Ctx) string) {
+func (d *debugLog) capture(c fiber.Ctx, clientIP func(fiber.Ctx) string, started time.Time) (string, *logTail) {
 	host, err := firewall.CanonicalHostname(string(c.Request().Header.Host()))
 	if err != nil {
-		return
+		return "", nil
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if !d.status.Enabled || !debugMatches(d.status.Hostname, host) {
-		return
+		return "", nil
 	}
 	sourceIP := clientIP(c)
 	if d.status.ClientIP != "" && sourceIP != d.status.ClientIP {
-		return
+		return "", nil
 	}
 	var line strings.Builder
-	fmt.Fprintf(&line, "[%s] FROM: %s, TO: %s, %s %s [", time.Now().UTC().Format(time.RFC3339Nano), sourceIP, host, debugEscape(string(c.Request().Header.Method())), debugEscape(string(c.Request().Header.RequestURI())))
+	fmt.Fprintf(&line, "[%s] FROM: %s, TO: %s, %s %s [", started.UTC().Format(time.RFC3339Nano), sourceIP, host, debugEscape(string(c.Request().Header.Method())), debugEscape(string(c.Request().Header.RequestURI())))
 	first := true
 	c.Request().Header.VisitAll(func(key, value []byte) {
 		if !first {
@@ -241,11 +272,22 @@ func (d *debugLog) capture(c fiber.Ctx, clientIP func(fiber.Ctx) string) {
 		first = false
 		fmt.Fprintf(&line, "%s: %s", debugEscape(string(key)), strconv.QuoteToASCII(string(value)))
 	})
-	line.WriteString("]\n")
-	file, err := openDebugLog(d.tail.path)
+	line.WriteString("]")
+	return line.String(), d.tail
+}
+
+func (d *debugLog) append(tail *logTail, line string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	// An accepted request retains its original destination when the capture is
+	// changed or disabled while an upstream response is still in flight.
+	file, err := openDebugLog(tail.path)
 	if err == nil {
-		_, err = file.WriteString(line.String())
+		_, err = file.WriteString(line)
 		err = errors.Join(err, file.Close())
+	}
+	if d.tail != tail {
+		return
 	}
 	if err != nil {
 		d.status.Error = "Unable to append debug log; check disk space and log directory permissions."

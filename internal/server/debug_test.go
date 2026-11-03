@@ -14,6 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"http-proxy-firewall/internal/observability"
 )
 
 func TestDebugCapturesRequestsBeforeAdmissionAndFirewall(t *testing.T) {
@@ -131,7 +133,12 @@ func TestDebugCapturesRequestsBeforeAdmissionAndFirewall(t *testing.T) {
 	}
 	defer resp.Body.Close()
 	var result struct {
-		Lines  []string `json:"lines"`
+		Lines   []string `json:"lines"`
+		Entries []struct {
+			URL        string                         `json:"url"`
+			DurationMS float64                        `json:"duration_ms"`
+			Response   observability.CapturedResponse `json:"response"`
+		} `json:"entries"`
 		Status struct {
 			Enabled bool   `json:"enabled"`
 			File    string `json:"file"`
@@ -154,6 +161,20 @@ func TestDebugCapturesRequestsBeforeAdmissionAndFirewall(t *testing.T) {
 			t.Fatalf("unwanted capture %q", excluded)
 		}
 	}
+	if len(result.Entries) != len(result.Lines) {
+		t.Fatal("completed entries did not parse")
+	}
+	for _, entry := range result.Entries {
+		want := 204
+		if entry.URL == "/blocked" {
+			want = 400
+		} else if entry.URL == "/admission" {
+			want = 503
+		}
+		if entry.Response.Status != want || entry.DurationMS <= 0 {
+			t.Fatalf("incorrect duration or final response: %+v", entry)
+		}
+	}
 	file, err := os.Open(result.Status.File)
 	if err != nil {
 		t.Fatal(err)
@@ -162,6 +183,131 @@ func TestDebugCapturesRequestsBeforeAdmissionAndFirewall(t *testing.T) {
 	data, _ := io.ReadAll(file)
 	if string(data) != all+"\n" {
 		t.Fatal("admin view does not match file contents")
+	}
+}
+
+func TestDebugCapturesCompletedStreamsAndUpgradeDenials(t *testing.T) {
+	for _, upgrade := range []bool{false, true} {
+		name := "ordinary"
+		if upgrade {
+			name = "upgrade-denial"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			release := make(chan struct{})
+			var once sync.Once
+			body := "<script>first</script>\n" + strings.Repeat("x", observability.ResponsePreviewLimit) + "last"
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Server", "origin-server")
+				w.Header().Add("Set-Cookie", "one=1")
+				w.Header().Add("Set-Cookie", "two=2")
+				if upgrade {
+					w.WriteHeader(http.StatusForbidden)
+				}
+				io.WriteString(w, body[:22])
+				w.(http.Flusher).Flush()
+				<-release
+				io.WriteString(w, body[22:])
+			}))
+			defer upstream.Close()
+			defer once.Do(func() { close(release) })
+			cfg := adminConfig(upstream.URL)
+			s := startAdminTestServer(t, cfg)
+			address := "http://" + s.HTTPAddress().String()
+			client := &http.Client{Timeout: 3 * time.Second}
+			api := func(method, path string) []byte {
+				t.Helper()
+				req, _ := http.NewRequest(method, address+"/__pf/__admin/api/"+path, nil)
+				req.SetBasicAuth(cfg.Admin.Accounts[0].User, cfg.Admin.Accounts[0].Password)
+				req.Header.Set("X-PF-Admin", "1")
+				resp, err := client.Do(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer resp.Body.Close()
+				data, err := io.ReadAll(resp.Body)
+				if err != nil || resp.StatusCode != 200 {
+					t.Fatalf("debug API: status=%d err=%v", resp.StatusCode, err)
+				}
+				return data
+			}
+			var status struct {
+				File string `json:"file"`
+			}
+			if err := json.Unmarshal(api("POST", "debug?hostname=stream.example"), &status); err != nil {
+				t.Fatal(err)
+			}
+			req, _ := http.NewRequest("GET", address+"/stream", nil)
+			req.Host = "stream.example"
+			if upgrade {
+				req.Header.Set("Connection", "Upgrade")
+				req.Header.Set("Upgrade", "websocket")
+			}
+			resp, err := client.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			first := make([]byte, 22)
+			if _, err := io.ReadFull(resp.Body, first); err != nil || string(first) != body[:22] {
+				t.Fatalf("first chunk: %q %v", first, err)
+			}
+			started := time.Now()
+			if data, err := os.ReadFile(status.File); err != nil || len(data) != 0 {
+				t.Fatalf("unfinished stream logged before completion: %q %v", data, err)
+			}
+			// A changed rule must not receive the old stream's completed entry.
+			api("POST", "debug?hostname=other.example")
+			time.Sleep(25 * time.Millisecond)
+			held := time.Since(started)
+			once.Do(func() { close(release) })
+			rest, err := io.ReadAll(resp.Body)
+			if err != nil || string(first)+string(rest) != body {
+				t.Fatalf("stream changed: %v", err)
+			}
+			waitForNoInFlight(t, s)
+			var captured struct {
+				DurationMS float64                        `json:"duration_ms"`
+				Response   observability.CapturedResponse `json:"response"`
+			}
+			deadline := time.Now().Add(time.Second)
+			for {
+				data, err := os.ReadFile(status.File)
+				_, metadata, found := strings.Cut(strings.TrimSpace(string(data)), " | ")
+				if err == nil && found && json.Unmarshal([]byte(metadata), &captured) == nil {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("stream did not complete capture: %s %v", data, err)
+				}
+				time.Sleep(time.Millisecond)
+			}
+			wantStatus := 200
+			if upgrade {
+				wantStatus = 403
+			}
+			if captured.DurationMS < float64(held)/float64(time.Millisecond) || captured.Response.Status != wantStatus || captured.Response.Bytes != uint64(len(body)) || captured.Response.Body != body[:observability.ResponsePreviewLimit] || !captured.Response.BodyTruncated || captured.Response.Error != "" {
+				t.Fatalf("stream response capture is incorrect: %+v", captured)
+			}
+			cookies := 0
+			for _, header := range captured.Response.Headers {
+				if strings.EqualFold(header.Name, "Server") && header.Value != resp.Header.Get("Server") {
+					t.Fatalf("captured upstream Server header instead of sent header: %s", header.Value)
+				}
+				if strings.EqualFold(header.Name, "Set-Cookie") {
+					cookies++
+				}
+			}
+			if cookies != 2 {
+				t.Fatalf("response lost duplicate cookies: %+v", captured.Response.Headers)
+			}
+			var batch struct {
+				Lines []string `json:"lines"`
+			}
+			if err := json.Unmarshal(api("GET", "debug/logs"), &batch); err != nil || len(batch.Lines) != 0 {
+				t.Fatal("old stream leaked into new capture")
+			}
+		})
 	}
 }
 
