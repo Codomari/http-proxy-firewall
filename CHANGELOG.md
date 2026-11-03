@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.12
+
+### Changed
+
+- Reorganize the README around setup, YAML configuration, admin controls and deployment. Add diagrams for request handling, configuration precedence and saved settings, document environment variables and legacy migration, and clarify how immediate admin changes interact with process overrides after restart.
+
 ## 0.3.11
 
 ### Added
