@@ -215,6 +215,93 @@
     } else text("log-status", "Latest 100 lines · keeps up to 10,000 lines while open");
   });
   const debug = {hostname: "", clientIP: "", file: "", enabled: false, cursor: "", limited: false, unparsed: false, timer: null, controller: null, busy: false};
+  const bodyOmission = (result) => result.body_omitted || (result.body_encoding === "base64" && result.bytes > 4096 ? "Binary body exceeds the 4 KiB capture limit" : "");
+  const responseHeader = (result, name) => result.headers.filter(header => header.name.toLowerCase() === name).map(header => header.value).join(", ");
+  let bodyViewVersion = 0;
+  function hexBody(data) {
+    const lines = [];
+    for (let offset = 0; offset < data.length; offset += 16) {
+      const chunk = data.subarray(offset, offset + 16);
+      const hex = Array.from(chunk, value => value.toString(16).padStart(2, "0")).join(" ").padEnd(47, " ");
+      const ascii = Array.from(chunk, value => value >= 32 && value < 127 ? String.fromCharCode(value) : ".").join("");
+      lines.push(`${offset.toString(16).padStart(6, "0")}  ${hex}  ${ascii}`);
+    }
+    return lines.join("\n");
+  }
+  async function decompressBody(data, encoding) {
+    const formats = encoding.toLowerCase().split(",").map(value => value.trim()).filter(value => value && value !== "identity").reverse();
+    for (const format of formats) {
+      if (!globalThis.DecompressionStream || !["gzip", "x-gzip", "deflate"].includes(format)) throw new Error(`Cannot decompress ${format} in this browser`);
+      const reader = new Blob([data]).stream().pipeThrough(new DecompressionStream(format === "x-gzip" ? "gzip" : format)).getReader();
+      const chunks = [];
+      let size = 0;
+      try {
+        while (true) {
+          const {done, value} = await reader.read();
+          if (done) break;
+          size += value.length;
+          if (size > 1024 * 1024) throw new Error("Decoded body exceeds the 1 MiB viewer limit");
+          chunks.push(value);
+        }
+      } finally {
+        try { await reader.cancel(); } catch (_) { /* The decoder may already have failed. */ }
+        reader.releaseLock();
+      }
+      data = new Uint8Array(size);
+      let offset = 0;
+      for (const chunk of chunks) { data.set(chunk, offset); offset += chunk.length; }
+    }
+    return data;
+  }
+  async function showDebugBody(entry) {
+    const result = entry.response, dialog = byId("debug-body-dialog"), version = ++bodyViewVersion;
+    const meta = [`HTTP ${result.status}`, responseHeader(result, "content-type") || "Unknown content type", `${bytes(result.bytes)} response`];
+    text("debug-body-request", `${entry.method} ${entry.hostname}${entry.url}`);
+    text("debug-body-meta", meta.join(" · "));
+    text("debug-body-note", "Decoding captured body…");
+    text("debug-body-content", "");
+    dialog.showModal();
+    let content = result.body || "", format = "Text", note = result.body_truncated ? "Showing the captured preview, up to 16 KiB." : "";
+    try {
+      const omitted = bodyOmission(result);
+      if (omitted) throw new Error(omitted);
+      const encoding = responseHeader(result, "content-encoding");
+      if (result.body_encoding === "base64" || encoding) {
+        let data = result.body_encoding === "base64" ? Uint8Array.from(atob(content), value => value.charCodeAt(0)) : new TextEncoder().encode(content);
+        if (encoding) {
+          try {
+            data = await decompressBody(data, encoding);
+            note = `${note} Decompressed ${encoding} in your browser.`.trim();
+          } catch (error) {
+            note = `${note} ${error.message}. Showing captured bytes.`.trim();
+          }
+        }
+        try {
+          content = new TextDecoder("utf-8", {fatal: true}).decode(data);
+          if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(content)) throw new Error("Binary content");
+          format = "Decoded text";
+        } catch (_) {
+          content = hexBody(data);
+          format = "Binary · hex / ASCII";
+        }
+      }
+      if (format !== "Binary · hex / ASCII" && content.trim()) {
+        try { content = JSON.stringify(JSON.parse(content), null, 2); format = "JSON"; } catch (_) { /* Keep non-JSON text as captured. */ }
+      }
+    } catch (error) {
+      content = `Unable to display the captured body: ${error.message}`;
+      format = "Unavailable";
+    }
+    if (!dialog.open || version !== bodyViewVersion) return;
+    text("debug-body-meta", [...meta, format].join(" · "));
+    text("debug-body-note", note || "Captured content is displayed as text.");
+    text("debug-body-content", content || "(empty body)");
+    byId("debug-body-content").scrollTop = 0;
+  }
+  const bodyDialog = byId("debug-body-dialog");
+  byId("debug-body-close").addEventListener("click", () => bodyDialog.close());
+  bodyDialog.addEventListener("click", event => { if (event.target === bodyDialog) bodyDialog.close(); });
+  bodyDialog.addEventListener("close", () => { bodyViewVersion++; text("debug-body-content", ""); });
   function appendDebug(data) {
     const body = byId("debug-rows"), view = byId("debug-scroll");
     const follow = body.childElementCount === 0 || view.scrollHeight - view.scrollTop - view.clientHeight < 40;
@@ -238,9 +325,25 @@
         const response = cell(row, "");
         if (entry.response) {
           const result = entry.response, details = document.createElement("details"), summary = document.createElement("summary"), values = document.createElement("pre");
-          summary.textContent = `${number.format(result.headers.length)} headers · ${bytes(result.bytes)} body${result.body_truncated ? " · preview truncated" : ""}${result.error ? " · transfer failed" : ""}`;
-          values.textContent = result.headers.map(header => `${header.name}: ${header.value}`).join("\n") + `\n\nBody${result.body_encoding === "base64" ? " (base64)" : ""}${result.body_truncated ? " (first 16 KiB)" : ""}:\n${result.body || "(empty)"}${result.error ? `\n\nTransfer error: ${result.error}` : ""}`;
+          summary.textContent = `${number.format(result.headers.length)} headers${result.error ? " · transfer failed" : ""}`;
+          values.textContent = result.headers.map(header => `${header.name}: ${header.value}`).join("\n") + (result.error ? `\n\nTransfer error: ${result.error}` : "");
           details.appendChild(summary); details.appendChild(values); response.appendChild(details);
+          const omitted = bodyOmission(result);
+          if (omitted) {
+            const notice = document.createElement("p");
+            notice.className = "debug-body-omitted detail";
+            notice.textContent = `${bytes(result.bytes)} body · omitted (over 4 KiB)`;
+            notice.title = omitted;
+            response.appendChild(notice);
+          } else {
+            const link = document.createElement("button");
+            link.type = "button"; link.className = "debug-body-link";
+            link.textContent = `View body · ${bytes(result.bytes)}${result.body_truncated ? " · preview" : ""}`;
+            link.setAttribute("aria-haspopup", "dialog");
+            link.setAttribute("aria-controls", "debug-body-dialog");
+            link.addEventListener("click", () => showDebugBody(entry));
+            response.appendChild(link);
+          }
         } else response.textContent = "—";
       }
       fragment.appendChild(row);

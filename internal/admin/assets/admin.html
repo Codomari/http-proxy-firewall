@@ -92,7 +92,7 @@
     <section class="panel logs-panel" aria-labelledby="debug-title">
       <div class="panel-header"><div><h2 id="debug-title">Hostname request debug</h2><p id="debug-capture-status" class="detail" role="status">Loading debug status…</p></div><button id="debug-disable" type="button" disabled>Disable debug</button></div>
       <form id="debug-form" class="debug-controls"><label class="search-label" for="debug-hostname">Hostname or wildcard<input id="debug-hostname" type="text" placeholder="example.com or *.example.com" maxlength="255" autocomplete="off" spellcheck="false" required></label><label class="search-label" for="debug-client-ip">Source IP (optional)<input id="debug-client-ip" type="text" placeholder="All sources, or an IPv4 / IPv6 address" maxlength="45" autocomplete="off" spellcheck="false"></label><button id="debug-enable" type="submit">Enable debug</button></form>
-      <p class="log-note detail">Leave Source IP blank for all sources, or enter one verified client IP to narrow the capture. Multiple host/source captures can run at once; select a capture to view its history. *.example.com matches subdomains at any depth, excluding example.com. Completed requests show duration, response status, headers and a body preview up to 16 KiB; binary previews use base64. Duration includes streamed response transfer; upgraded connections show handshake preparation only. Disabling stops new requests for the selected capture; in-flight requests finish logging. Captures are saved to override YAML and resume after a service restart. Closing this tab only pauses viewing. Captured headers and response bodies may contain credentials, cookies and private data.</p>
+      <p class="log-note detail">Leave Source IP blank for all sources, or enter one verified client IP to narrow the capture. Multiple host/source captures can run at once; select a capture to view its history. *.example.com matches subdomains at any depth, excluding example.com. Completed requests show duration, response status, headers and a text preview up to 16 KiB. Binary bodies are captured only up to 4 KiB of original response bytes. Click View body to decode captured content in a dialog. Duration includes streamed response transfer; upgraded connections show handshake preparation only. Disabling stops new requests for the selected capture; in-flight requests finish logging. Captures are saved to override YAML and resume after a service restart. Closing this tab only pauses viewing. Captured headers and response bodies may contain credentials, cookies and private data.</p>
       <div class="debug-controls"><label class="search-label" for="debug-capture">View capture<select id="debug-capture"><option value="">No captures configured</option></select></label></div>
       <div id="debug-error" class="error debug-error" role="alert" hidden></div>
       <div id="debug-scroll" class="table-scroll debug-table-scroll" tabindex="0" aria-label="Debug requests"><table class="debug-table"><thead><tr><th scope="col">Time (UTC)</th><th scope="col">Client IP</th><th scope="col">Hostname</th><th scope="col">Method</th><th scope="col">URL</th><th scope="col">Duration</th><th scope="col">Status</th><th scope="col">Request headers</th><th scope="col">Response sent</th></tr></thead><tbody id="debug-rows"></tbody></table></div>
@@ -110,5 +110,12 @@
     </div>
     <footer class="page-footer"><span id="capacity">Bounded host tracking</span><span>Admin requests are excluded from traffic totals.</span></footer>
   </main>
+  <dialog id="debug-body-dialog" class="debug-body-dialog" aria-labelledby="debug-body-title" aria-describedby="debug-body-meta debug-body-note">
+    <div class="debug-body-header"><div><p class="eyebrow">Debug / Response</p><h2 id="debug-body-title">Response body</h2></div><button id="debug-body-close" type="button" autofocus>Close</button></div>
+    <p id="debug-body-request" class="debug-body-request"></p>
+    <p id="debug-body-meta" class="detail"></p>
+    <p id="debug-body-note" class="detail" role="status"></p>
+    <pre id="debug-body-content" tabindex="0" aria-label="Decoded response body"></pre>
+  </dialog>
 </body>
 </html>

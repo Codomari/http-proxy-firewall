@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.9
+
+### Changed
+
+- Omit base64 response bodies from debug captures when the original response body exceeds 4 KiB, retaining byte counts, headers and an explicit omission reason for buffered and streamed responses.
+- Open debug response bodies in a dialog with browser-side base64 decoding, formatted JSON/text, binary hex/ASCII, and bounded gzip/deflate decompression when supported. Render captured content as plain text and hide oversized binary bodies in older captures.
+
 ## 0.3.7
 
 Seven features added since the preceding commit, using the requested 0.3 release baseline.

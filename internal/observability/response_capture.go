@@ -13,7 +13,10 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-const ResponsePreviewLimit = 16 << 10
+const (
+	ResponsePreviewLimit    = 16 << 10
+	BinaryResponseBodyLimit = 4 << 10
+)
 
 type CapturedHeader struct {
 	Name  string `json:"name"`
@@ -27,6 +30,7 @@ type CapturedResponse struct {
 	Body          string           `json:"body"`
 	BodyEncoding  string           `json:"body_encoding"`
 	BodyTruncated bool             `json:"body_truncated"`
+	BodyOmitted   string           `json:"body_omitted,omitempty"`
 	Error         string           `json:"error,omitempty"`
 }
 
@@ -124,7 +128,12 @@ func (capture *ResponseCapture) complete() {
 		capture.response.Body = string(capture.preview)
 	} else {
 		capture.response.BodyEncoding = "base64"
-		capture.response.Body = base64.StdEncoding.EncodeToString(capture.preview)
+		if capture.response.Bytes > BinaryResponseBodyLimit {
+			capture.response.BodyOmitted = "Binary body exceeds the 4 KiB capture limit"
+			capture.response.BodyTruncated = false
+		} else {
+			capture.response.Body = base64.StdEncoding.EncodeToString(capture.preview)
+		}
 	}
 	capture.finish(time.Since(capture.started), capture.response)
 }
