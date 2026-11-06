@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.33 — 2026-11-06
+
+### Changed
+
+- Move the upstream burst capacity and whitelisted-client cookie checkpoint explanations into matching info tooltips beside their General settings section headings. Show each explanation on hover or keyboard focus, retaining screen-reader descriptions for the related controls.
+
 ## 0.3.32 — 2026-11-06
 
 Two logical user-facing features since 0.3.30, following the project's patch-count convention.

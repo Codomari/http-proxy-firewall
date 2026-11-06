@@ -86,8 +86,22 @@
         <label class="search-label" for="upstream-request-retry-times">Upstream request retries<input id="upstream-request-retry-times" type="number" min="0" step="1" value="3" required><span class="detail">Additional retries after a closed upstream connection, for GET/HEAD requests without a body. Default: 3. Set 0 to disable. Saving applies immediately to all upstream routes.</span></label>
         <label class="search-label" for="max-concurrent-requests">Concurrent request handlers<input id="max-concurrent-requests" type="number" min="1" step="1" value="256" required><span class="detail">Global request-processing limit. Response streams and tunnels also count against their upstream connection limit until they finish.</span></label>
         <label class="search-label" for="upstream-max-connections">Normal upstream connections<input id="upstream-max-connections" type="number" min="1" step="1" value="256" required><span class="detail">Normal reusable capacity for each upstream pool. Lower limits let existing requests finish.</span></label>
-        <fieldset><legend>Upstream burst capacity</legend><label class="checkpoint-option"><input id="upstream-allow-overflow" type="checkbox">Allow temporary overflow connections</label><label class="search-label" for="upstream-max-overflow-connections">Maximum connections during a burst<input id="upstream-max-overflow-connections" type="number" min="0" step="1" value="512" required><span class="detail">Absolute total ceiling, including normal connections. Must be at least the normal limit when enabled. Overflow connections close when the response finishes; normal keepalive connections remain reusable.</span></label></fieldset>
-        <fieldset><legend>Cookie checkpoint for whitelisted clients</legend><label class="checkpoint-option"><input id="ip-checkpoint" type="checkbox" checked>Apply cookie checkpoint to whitelisted IPs and networks</label><label class="checkpoint-option"><input id="country-checkpoint" type="checkbox" checked>Apply cookie checkpoint to whitelisted countries</label><p class="detail">Applies when the hostname is under a DDoS penalty. CVE/body validation and bot-query rules always apply. If both lists match, an enabled checkpoint takes priority. Static-file exemptions continue to apply.</p></fieldset>
+        <fieldset>
+          <legend class="legend-with-hint">Upstream burst capacity<span class="field-hint">
+            <button type="button" class="hint-button" aria-label="About upstream burst capacity" aria-describedby="upstream-burst-hint">i</button>
+            <span id="upstream-burst-hint" class="hint-text" role="tooltip">Absolute total ceiling, including normal connections. Must be at least the normal limit when enabled. Overflow connections close when the response finishes; normal keepalive connections remain reusable.</span>
+          </span></legend>
+          <label class="checkpoint-option"><input id="upstream-allow-overflow" type="checkbox">Allow temporary overflow connections</label>
+          <label class="search-label burst-limit-field" for="upstream-max-overflow-connections">Maximum connections during a burst<input id="upstream-max-overflow-connections" type="number" min="0" step="1" value="512" aria-describedby="upstream-burst-hint" required></label>
+        </fieldset>
+        <fieldset aria-describedby="cookie-checkpoint-hint">
+          <legend class="legend-with-hint">Cookie checkpoint for whitelisted clients<span class="field-hint">
+            <button type="button" class="hint-button" aria-label="About cookie checkpoints for whitelisted clients" aria-describedby="cookie-checkpoint-hint">i</button>
+            <span id="cookie-checkpoint-hint" class="hint-text" role="tooltip">Applies when the hostname is under a DDoS penalty. CVE/body validation and bot-query rules always apply. If both lists match, an enabled checkpoint takes priority. Static-file exemptions continue to apply.</span>
+          </span></legend>
+          <label class="checkpoint-option"><input id="ip-checkpoint" type="checkbox" checked>Apply cookie checkpoint to whitelisted IPs and networks</label>
+          <label class="checkpoint-option"><input id="country-checkpoint" type="checkbox" checked>Apply cookie checkpoint to whitelisted countries</label>
+        </fieldset>
         <div class="general-rules-actions"><button id="general-rules-save" type="submit" disabled>Save general settings</button><span id="general-rules-feedback" class="detail" role="status"></span></div>
       </form>
       <p id="general-rules-overrides" class="log-note detail" hidden></p>
