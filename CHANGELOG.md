@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.39 — 2026-11-06
+
+Six user-facing changes since 0.3.33, following the project's patch-count convention.
+
+### Changed
+
+- Add the same collapsible header arrow used by Host Activity to the Certificates and BLACKLIST sections in Admin → CERTBOT. Sections with more than 10 entries start collapsed unless the browser has a saved choice.
+- Place Upstream burst capacity beside Normal upstream connections in Admin → Rules → General settings. Stack the controls on smaller screens.
+- Move Rules field descriptions into info tooltips immediately beside each label, including domain rules. Tooltips open on hover or keyboard focus and remain associated with their controls for screen readers.
+- Move Runtime directly below CPU and RAM usage in Admin → Monitoring.
+- Start Disk space & mounts collapsed when the browser has no saved choice.
+- Remember each admin section's open or closed state independently in local storage, scoped to the admin path. Saved choices take precedence over automatic defaults across refreshes and certificate or blacklist count changes. Storage restrictions leave the controls usable.
+
 ## 0.3.33 — 2026-11-06
 
 ### Changed

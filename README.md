@@ -1,6 +1,6 @@
 # http-proxy-firewall
 
-Version **0.3.33** · [Changelog](CHANGELOG.md) · [MIT license](LICENSE)
+Version **0.3.39** · [Changelog](CHANGELOG.md) · [MIT license](LICENSE)
 
 A reverse proxy and Layer 7 firewall that sits in front of your web applications. It checks requests before forwarding them, adds a cookie checkpoint during traffic spikes, and provides an embedded admin dashboard.
 

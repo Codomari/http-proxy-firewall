@@ -26,7 +26,7 @@
       <button id="tab-hosts" type="button" role="tab" aria-selected="false" aria-controls="view-hosts" tabindex="-1">Host Activity</button>
     </div>
     <div id="view-monitoring" role="tabpanel" aria-labelledby="tab-monitoring" tabindex="0">
-    <details class="dashboard-group" open><summary class="section-heading"><h2>Traffic overview</h2></summary>
+    <details id="traffic-panel" class="dashboard-group" open><summary class="section-heading"><h2>Traffic overview</h2></summary>
     <section class="cards traffic" aria-label="Traffic overview">
       <article class="card"><span class="label">Total requests</span><strong id="requests">—</strong><span id="rate" class="detail">Waiting for traffic</span></article>
       <article class="card"><span class="label">In flight</span><strong id="inflight">—</strong><span class="detail">Currently serving</span></article>
@@ -35,7 +35,7 @@
       <article class="card"><span class="label">Server errors · 5xx</span><strong id="errors">—</strong><span class="detail">Including upstream failures</span></article>
     </section>
     </details>
-    <details class="dashboard-group" open><summary class="section-heading"><h2>CPU and RAM usage</h2></summary>
+    <details id="resources-panel" class="dashboard-group" open><summary class="section-heading"><h2>CPU and RAM usage</h2></summary>
     <section class="cards resources" aria-label="CPU and RAM usage">
       <article class="card"><span class="label">Process CPU</span><strong id="process-cpu">—</strong><span id="process-cpu-detail" class="detail">Collecting a CPU sample…</span></article>
       <article class="card"><span class="label">Process RAM · RSS</span><strong id="process-ram">—</strong><span id="process-ram-detail" class="detail">Resident physical memory</span></article>
@@ -43,17 +43,7 @@
       <article class="card"><span class="label">Server RAM</span><strong id="server-ram">—</strong><span id="server-ram-detail" class="detail">Used / total physical memory</span></article>
     </section>
     </details>
-    <details class="dashboard-group" open><summary class="section-heading"><h2>Storage and intelligence</h2></summary>
-    <section class="service-grid" aria-label="Storage and intelligence">
-      <article class="card service-card"><div class="service-heading"><h2>Redis</h2><span id="redis-status" class="service-state">Waiting</span></div><div class="service-rates"><div><span class="label">Reads / sec</span><strong id="redis-reads">—</strong></div><div><span class="label">Writes / sec</span><strong id="redis-writes">—</strong></div></div><span id="redis-totals" class="detail">Waiting for storage counters</span><span id="redis-detail" class="detail"></span></article>
-      <article class="card service-card"><div class="service-heading"><h2>MaxMind database</h2><span id="maxmind-status" class="service-state">Waiting</span></div><span class="label">Database file last modified</span><strong id="maxmind-modified" class="file-time">—</strong><span id="maxmind-update" class="detail">Waiting for database status</span><span class="detail">Timestamp comes from the installed file.</span></article>
-    </section>
-    </details>
-    <details class="panel disks-panel" aria-labelledby="disks-title" open>
-      <summary class="panel-header"><div><h2 id="disks-title">Disk space &amp; mounts</h2><p id="disk-status" class="detail">Loading mounted filesystems…</p></div></summary>
-      <div class="table-scroll"><table><thead><tr><th scope="col">Mount / source</th><th scope="col">Filesystem</th><th scope="col">Total</th><th scope="col">Used</th><th scope="col">Available</th><th scope="col">Usage</th></tr></thead><tbody id="disks"><tr><td colspan="6" class="empty">Waiting for disk information…</td></tr></tbody></table></div>
-    </details>
-    <details class="runtime" aria-labelledby="runtime-title" open><summary class="section-heading"><h2 id="runtime-title">Runtime</h2><span class="detail">Live Go process</span></summary><div class="runtime-grid">
+    <details id="runtime-panel" class="runtime" aria-labelledby="runtime-title" open><summary class="section-heading"><h2 id="runtime-title">Runtime</h2><span class="detail">Live Go process</span></summary><div class="runtime-grid">
       <article class="metric"><span class="label">Goroutines</span><strong id="goroutines">—</strong></article>
       <article class="metric"><span class="label">Heap allocated</span><strong id="heap">—</strong><span id="heap-inuse" class="detail"></span></article>
       <article class="metric"><span class="label">Runtime memory</span><strong id="system-memory">—</strong><span id="stack" class="detail"></span></article>
@@ -61,6 +51,16 @@
       <article class="metric"><span class="label">GC cycles</span><strong id="gc">—</strong><span id="gc-pause" class="detail"></span></article>
       <article class="metric"><span class="label">CPU parallelism</span><strong id="cpu">—</strong><span class="detail">GOMAXPROCS / logical CPUs</span></article>
     </div></details>
+    <details id="services-panel" class="dashboard-group" open><summary class="section-heading"><h2>Storage and intelligence</h2></summary>
+    <section class="service-grid" aria-label="Storage and intelligence">
+      <article class="card service-card"><div class="service-heading"><h2>Redis</h2><span id="redis-status" class="service-state">Waiting</span></div><div class="service-rates"><div><span class="label">Reads / sec</span><strong id="redis-reads">—</strong></div><div><span class="label">Writes / sec</span><strong id="redis-writes">—</strong></div></div><span id="redis-totals" class="detail">Waiting for storage counters</span><span id="redis-detail" class="detail"></span></article>
+      <article class="card service-card"><div class="service-heading"><h2>MaxMind database</h2><span id="maxmind-status" class="service-state">Waiting</span></div><span class="label">Database file last modified</span><strong id="maxmind-modified" class="file-time">—</strong><span id="maxmind-update" class="detail">Waiting for database status</span><span class="detail">Timestamp comes from the installed file.</span></article>
+    </section>
+    </details>
+    <details id="disks-panel" class="panel disks-panel" aria-labelledby="disks-title">
+      <summary class="panel-header"><div><h2 id="disks-title">Disk space &amp; mounts</h2><p id="disk-status" class="detail">Loading mounted filesystems…</p></div></summary>
+      <div class="table-scroll"><table><thead><tr><th scope="col">Mount / source</th><th scope="col">Filesystem</th><th scope="col">Total</th><th scope="col">Used</th><th scope="col">Available</th><th scope="col">Usage</th></tr></thead><tbody id="disks"><tr><td colspan="6" class="empty">Waiting for disk information…</td></tr></tbody></table></div>
+    </details>
     </div>
     <div id="view-logs" role="tabpanel" aria-labelledby="tab-logs" tabindex="0" hidden>
     <section class="panel logs-panel" aria-labelledby="logs-title">
@@ -79,28 +79,87 @@
     <section class="panel logs-panel" aria-labelledby="general-rules-title">
       <div class="panel-header"><div><h2 id="general-rules-title">General settings</h2><p id="general-rules-status" class="detail" role="status">Loading YAML settings…</p></div></div>
       <form id="general-rules-form" class="general-rules-form">
-        <label for="whitelist-ips">Whitelisted IPs<textarea id="whitelist-ips" rows="4" maxlength="16384" placeholder="203.0.113.8&#10;2001:db8::8" spellcheck="false"></textarea><span class="detail">IPv4 or IPv6 addresses, one per line or separated by commas.</span></label>
-        <label for="whitelist-networks">Whitelisted networks<textarea id="whitelist-networks" rows="4" maxlength="16384" placeholder="203.0.113.0/24&#10;2001:db8::/32" spellcheck="false"></textarea><span class="detail">CIDR networks. Loopback networks remain included automatically.</span></label>
-        <label for="allowed-countries">Whitelisted countries<textarea id="allowed-countries" rows="4" maxlength="8192" placeholder="Azerbaijan&#10;Turkey" spellcheck="false"></textarea><span class="detail">Country names, one per line or separated by commas.</span></label>
-        <label class="search-label" for="ddos-threshold">DDoS threshold (requests/second per hostname)<input id="ddos-threshold" type="number" min="1" max="1000000000" step="1" value="200" required><span class="detail">Average request rate over the sampling window. Changes apply immediately; existing penalties keep their expiry.</span></label>
-        <label class="search-label" for="upstream-request-retry-times">Upstream request retries<input id="upstream-request-retry-times" type="number" min="0" step="1" value="3" required><span class="detail">Additional retries after a closed upstream connection, for GET/HEAD requests without a body. Default: 3. Set 0 to disable. Saving applies immediately to all upstream routes.</span></label>
-        <label class="search-label" for="max-concurrent-requests">Concurrent request handlers<input id="max-concurrent-requests" type="number" min="1" step="1" value="256" required><span class="detail">Global request-processing limit. Response streams and tunnels also count against their upstream connection limit until they finish.</span></label>
-        <label class="search-label" for="upstream-max-connections">Normal upstream connections<input id="upstream-max-connections" type="number" min="1" step="1" value="256" required><span class="detail">Normal reusable capacity for each upstream pool. Lower limits let existing requests finish.</span></label>
-        <fieldset>
+        <div class="rule-field">
+          <div class="field-label"><label for="whitelist-ips">Whitelisted IPs</label><span class="field-hint">
+            <button type="button" class="hint-button" aria-label="About whitelisted IPs" aria-describedby="whitelist-ips-hint">i</button>
+            <span id="whitelist-ips-hint" class="hint-text" role="tooltip">IPv4 or IPv6 addresses, one per line or separated by commas.</span>
+          </span></div>
+          <textarea id="whitelist-ips" rows="4" maxlength="16384" placeholder="203.0.113.8&#10;2001:db8::8" spellcheck="false" aria-describedby="whitelist-ips-hint"></textarea>
+        </div>
+        <div class="rule-field">
+          <div class="field-label"><label for="whitelist-networks">Whitelisted networks</label><span class="field-hint">
+            <button type="button" class="hint-button" aria-label="About whitelisted networks" aria-describedby="whitelist-networks-hint">i</button>
+            <span id="whitelist-networks-hint" class="hint-text" role="tooltip">CIDR networks. Loopback networks remain included automatically.</span>
+          </span></div>
+          <textarea id="whitelist-networks" rows="4" maxlength="16384" placeholder="203.0.113.0/24&#10;2001:db8::/32" spellcheck="false" aria-describedby="whitelist-networks-hint"></textarea>
+        </div>
+        <div class="rule-field">
+          <div class="field-label"><label for="allowed-countries">Whitelisted countries</label><span class="field-hint">
+            <button type="button" class="hint-button" aria-label="About whitelisted countries" aria-describedby="allowed-countries-hint">i</button>
+            <span id="allowed-countries-hint" class="hint-text" role="tooltip">Country names, one per line or separated by commas.</span>
+          </span></div>
+          <textarea id="allowed-countries" rows="4" maxlength="8192" placeholder="Azerbaijan&#10;Turkey" spellcheck="false" aria-describedby="allowed-countries-hint"></textarea>
+        </div>
+        <div class="rule-field search-label">
+          <div class="field-label"><label for="ddos-threshold">DDoS threshold (requests/second per hostname)</label><span class="field-hint">
+            <button type="button" class="hint-button" aria-label="About DDoS threshold (requests/second per hostname)" aria-describedby="ddos-threshold-hint">i</button>
+            <span id="ddos-threshold-hint" class="hint-text" role="tooltip">Average request rate over the sampling window. Changes apply immediately; existing penalties keep their expiry.</span>
+          </span></div>
+          <input id="ddos-threshold" type="number" min="1" max="1000000000" step="1" value="200" aria-describedby="ddos-threshold-hint" required>
+        </div>
+        <div class="rule-field search-label">
+          <div class="field-label"><label for="upstream-request-retry-times">Upstream request retries</label><span class="field-hint">
+            <button type="button" class="hint-button" aria-label="About upstream request retries" aria-describedby="upstream-request-retry-times-hint">i</button>
+            <span id="upstream-request-retry-times-hint" class="hint-text" role="tooltip">Additional retries after a closed upstream connection, for GET/HEAD requests without a body. Default: 3. Set 0 to disable. Saving applies immediately to all upstream routes.</span>
+          </span></div>
+          <input id="upstream-request-retry-times" type="number" min="0" step="1" value="3" aria-describedby="upstream-request-retry-times-hint" required>
+        </div>
+        <div class="rule-field search-label">
+          <div class="field-label"><label for="max-concurrent-requests">Concurrent request handlers</label><span class="field-hint">
+            <button type="button" class="hint-button" aria-label="About concurrent request handlers" aria-describedby="max-concurrent-requests-hint">i</button>
+            <span id="max-concurrent-requests-hint" class="hint-text" role="tooltip">Global request-processing limit. Response streams and tunnels also count against their upstream connection limit until they finish.</span>
+          </span></div>
+          <input id="max-concurrent-requests" type="number" min="1" step="1" value="256" aria-describedby="max-concurrent-requests-hint" required>
+        </div>
+        <div class="rule-field search-label">
+          <div class="field-label"><label for="upstream-max-connections">Normal upstream connections</label><span class="field-hint">
+            <button type="button" class="hint-button" aria-label="About normal upstream connections" aria-describedby="upstream-max-connections-hint">i</button>
+            <span id="upstream-max-connections-hint" class="hint-text" role="tooltip">Normal reusable capacity for each upstream pool. Lower limits let existing requests finish.</span>
+          </span></div>
+          <input id="upstream-max-connections" type="number" min="1" step="1" value="256" aria-describedby="upstream-max-connections-hint" required>
+        </div>
+        <fieldset class="upstream-burst-settings">
           <legend class="legend-with-hint">Upstream burst capacity<span class="field-hint">
             <button type="button" class="hint-button" aria-label="About upstream burst capacity" aria-describedby="upstream-burst-hint">i</button>
             <span id="upstream-burst-hint" class="hint-text" role="tooltip">Absolute total ceiling, including normal connections. Must be at least the normal limit when enabled. Overflow connections close when the response finishes; normal keepalive connections remain reusable.</span>
           </span></legend>
-          <label class="checkpoint-option"><input id="upstream-allow-overflow" type="checkbox">Allow temporary overflow connections</label>
-          <label class="search-label burst-limit-field" for="upstream-max-overflow-connections">Maximum connections during a burst<input id="upstream-max-overflow-connections" type="number" min="0" step="1" value="512" aria-describedby="upstream-burst-hint" required></label>
+          <div class="burst-controls">
+            <div class="field-label"><label class="checkpoint-option" for="upstream-allow-overflow"><input id="upstream-allow-overflow" type="checkbox" aria-describedby="upstream-allow-overflow-hint">Allow temporary overflow connections</label><span class="field-hint">
+              <button type="button" class="hint-button" aria-label="About temporary overflow connections" aria-describedby="upstream-allow-overflow-hint">i</button>
+              <span id="upstream-allow-overflow-hint" class="hint-text" role="tooltip">Create temporary connections above the normal limit as needed, up to the burst ceiling. They close when the response finishes.</span>
+            </span></div>
+            <div class="rule-field search-label">
+              <div class="field-label"><label for="upstream-max-overflow-connections">Maximum connections during a burst</label><span class="field-hint">
+                <button type="button" class="hint-button" aria-label="About maximum connections during a burst" aria-describedby="upstream-max-overflow-connections-hint">i</button>
+                <span id="upstream-max-overflow-connections-hint" class="hint-text" role="tooltip">Absolute total ceiling, including normal connections. Must be at least the normal limit when enabled.</span>
+              </span></div>
+              <input id="upstream-max-overflow-connections" type="number" min="0" step="1" value="512" aria-describedby="upstream-max-overflow-connections-hint" required>
+            </div>
+          </div>
         </fieldset>
         <fieldset aria-describedby="cookie-checkpoint-hint">
           <legend class="legend-with-hint">Cookie checkpoint for whitelisted clients<span class="field-hint">
             <button type="button" class="hint-button" aria-label="About cookie checkpoints for whitelisted clients" aria-describedby="cookie-checkpoint-hint">i</button>
             <span id="cookie-checkpoint-hint" class="hint-text" role="tooltip">Applies when the hostname is under a DDoS penalty. CVE/body validation and bot-query rules always apply. If both lists match, an enabled checkpoint takes priority. Static-file exemptions continue to apply.</span>
           </span></legend>
-          <label class="checkpoint-option"><input id="ip-checkpoint" type="checkbox" checked>Apply cookie checkpoint to whitelisted IPs and networks</label>
-          <label class="checkpoint-option"><input id="country-checkpoint" type="checkbox" checked>Apply cookie checkpoint to whitelisted countries</label>
+          <div class="field-label"><label class="checkpoint-option" for="ip-checkpoint"><input id="ip-checkpoint" type="checkbox" aria-describedby="ip-checkpoint-hint" checked>Apply cookie checkpoint to whitelisted IPs and networks</label><span class="field-hint">
+            <button type="button" class="hint-button" aria-label="About cookie checkpoints for whitelisted IPs and networks" aria-describedby="ip-checkpoint-hint">i</button>
+            <span id="ip-checkpoint-hint" class="hint-text" role="tooltip">Apply the cookie checkpoint to whitelisted IPs and networks when the hostname is under a DDoS penalty. Static-file exemptions continue to apply.</span>
+          </span></div>
+          <div class="field-label"><label class="checkpoint-option" for="country-checkpoint"><input id="country-checkpoint" type="checkbox" aria-describedby="country-checkpoint-hint" checked>Apply cookie checkpoint to whitelisted countries</label><span class="field-hint">
+            <button type="button" class="hint-button" aria-label="About cookie checkpoints for whitelisted countries" aria-describedby="country-checkpoint-hint">i</button>
+            <span id="country-checkpoint-hint" class="hint-text" role="tooltip">Apply the cookie checkpoint to whitelisted countries when the hostname is under a DDoS penalty. Static-file exemptions continue to apply.</span>
+          </span></div>
         </fieldset>
         <div class="general-rules-actions"><button id="general-rules-save" type="submit" disabled>Save general settings</button><span id="general-rules-feedback" class="detail" role="status"></span></div>
       </form>
@@ -109,8 +168,23 @@
     </section>
     <section class="panel logs-panel" aria-labelledby="cloudflare-title">
       <div class="panel-header"><div><h2 id="cloudflare-title">Domain rules</h2><p id="cloudflare-status" class="detail" role="status">Loading domain rules…</p></div></div>
-      <form id="cloudflare-form" class="debug-controls"><label class="search-label" for="cloudflare-hostname">Domain or wildcard<input id="cloudflare-hostname" type="text" placeholder="example.com or *.example.com" maxlength="255" autocomplete="off" spellcheck="false" required></label><label class="search-label" for="rule-type">Rule type<select id="rule-type"><option value="cloudflare">Behind CloudFlare</option></select></label><button id="cloudflare-save" type="submit">Save rule</button></form>
-      <p class="log-note detail">A plain domain rule includes its www. subdomain by default. Applies to all requests, including firewall checks, debug filtering and upstream client IPs. Settings survive a restart. Headers are trusted only from Cloudflare edges or explicitly configured trusted proxies. Each rule is enabled by its presence; remove it to use inherited or default behavior. Rules are saved to proxy-firewall.override.yaml.</p>
+      <form id="cloudflare-form" class="debug-controls">
+        <div class="rule-field search-label">
+          <div class="field-label"><label for="cloudflare-hostname">Domain or wildcard</label><span class="field-hint">
+            <button type="button" class="hint-button" aria-label="About domain rules" aria-describedby="cloudflare-hostname-hint">i</button>
+            <span id="cloudflare-hostname-hint" class="hint-text" role="tooltip">A plain domain rule includes its www. subdomain by default. Applies to all requests, including firewall checks, debug filtering and upstream client IPs. Settings survive a restart. Headers are trusted only from Cloudflare edges or explicitly configured trusted proxies. Each rule is enabled by its presence; remove it to use inherited or default behavior. Rules are saved to proxy-firewall.override.yaml.</span>
+          </span></div>
+          <input id="cloudflare-hostname" type="text" placeholder="example.com or *.example.com" maxlength="255" autocomplete="off" spellcheck="false" aria-describedby="cloudflare-hostname-hint" required>
+        </div>
+        <div class="rule-field search-label">
+          <div class="field-label"><label for="rule-type">Rule type</label><span class="field-hint">
+            <button type="button" class="hint-button" aria-label="About domain rule types" aria-describedby="rule-type-hint">i</button>
+            <span id="rule-type-hint" class="hint-text" role="tooltip">Behind CloudFlare marks this domain as using Cloudflare. Headers are trusted only from Cloudflare edges or explicitly configured trusted proxies.</span>
+          </span></div>
+          <select id="rule-type" aria-describedby="rule-type-hint"><option value="cloudflare">Behind CloudFlare</option></select>
+        </div>
+        <button id="cloudflare-save" type="submit">Save rule</button>
+      </form>
       <div id="cloudflare-error" class="error debug-error" role="alert" hidden></div>
       <div class="table-scroll"><table><thead><tr><th scope="col">Domain pattern</th><th scope="col">Rule</th><th scope="col">Action</th></tr></thead><tbody id="cloudflare-hosts"><tr><td colspan="3" class="empty">Loading rules…</td></tr></tbody></table></div>
     </section>
@@ -128,23 +202,23 @@
     </section>
     </div>
     <div id="view-certbot" role="tabpanel" aria-labelledby="tab-certbot" tabindex="0" hidden>
-    <section class="panel logs-panel" aria-labelledby="certificates-title">
-      <div class="panel-header"><div><h2 id="certificates-title">Certificates</h2><p id="certificates-status" class="detail" role="status">Loading certificates…</p></div></div>
+    <details id="certificates-panel" class="panel logs-panel" aria-labelledby="certificates-title" open>
+      <summary class="panel-header"><div><h2 id="certificates-title">Certificates</h2><p id="certificates-status" class="detail" role="status">Loading certificates…</p></div></summary>
       <form id="certificate-form" class="debug-controls"><label class="search-label" for="certificate-hostname">Hostname<input id="certificate-hostname" type="text" placeholder="example.com" maxlength="253" autocomplete="off" spellcheck="false" required></label><button id="certificate-request" type="submit" disabled>Request certificate</button></form>
       <p id="certificate-feedback" class="log-note detail" role="status">Remove a blacklisted hostname below before requesting its certificate. Hostnames marked Behind CloudFlare are excluded.</p>
       <div id="certificate-error" class="error debug-error" role="alert" hidden></div>
       <div class="table-scroll"><table class="blacklist-table"><thead><tr><th scope="col">Hostname / names</th><th scope="col">Issuer</th><th scope="col">Valid from (UTC)</th><th scope="col">Expires (UTC)</th><th scope="col">Source</th></tr></thead><tbody id="certificates"><tr><td colspan="5" class="empty">Loading certificates…</td></tr></tbody></table></div>
       <div class="table-scroll"><table class="blacklist-table"><thead><tr><th scope="col">Requested hostname</th><th scope="col">Status</th><th scope="col">Started (UTC)</th><th scope="col">Details</th></tr></thead><tbody id="certificate-requests"><tr><td colspan="4" class="empty">No manual certificate requests.</td></tr></tbody></table></div>
-    </section>
-    <section class="panel logs-panel" aria-labelledby="blacklist-title">
-      <div class="panel-header"><div><h2 id="blacklist-title">BLACKLIST</h2><p id="blacklist-status" class="detail" role="status">Loading blacklisted hostnames…</p></div></div>
+    </details>
+    <details id="blacklist-panel" class="panel logs-panel" aria-labelledby="blacklist-title" open>
+      <summary class="panel-header"><div><h2 id="blacklist-title">BLACKLIST</h2><p id="blacklist-status" class="detail" role="status">Loading blacklisted hostnames…</p></div></summary>
       <p class="log-note detail">Hostnames that fail certificate verification are blocked for 14 days. Remove an entry to allow verification again on its next certificate request.</p>
       <div id="blacklist-error" class="error debug-error" role="alert" hidden></div>
       <div class="table-scroll"><table class="blacklist-table"><thead><tr><th scope="col">Hostname</th><th scope="col">Expires (UTC)</th><th scope="col">Action</th></tr></thead><tbody id="blacklist-hosts"><tr><td colspan="3" class="empty">Loading blacklisted hostnames…</td></tr></tbody></table></div>
-    </section>
+    </details>
     </div>
     <div id="view-hosts" role="tabpanel" aria-labelledby="tab-hosts" tabindex="0" hidden>
-    <details class="panel hosts-panel" aria-labelledby="hosts-title" open>
+    <details id="hosts-panel" class="panel hosts-panel" aria-labelledby="hosts-title" open>
       <summary class="panel-header"><div><h2 id="hosts-title">Host activity</h2><p id="host-count" class="detail">Loading hosts…</p></div></summary><div class="panel-toolbar"><label class="search-label"><span class="sr-only">Search hosts</span><input id="search" type="search" placeholder="Search hosts" maxlength="256" autocomplete="off" spellcheck="false"></label></div>
       <div class="table-scroll"><table><thead><tr><th scope="col" aria-sort="none"><button type="button" class="host-sort" data-host-sort="hostname">Host<span class="sort-indicator" aria-hidden="true"></span></button></th><th scope="col" aria-sort="none"><button type="button" class="host-sort" data-host-sort="requests">Requests<span class="sort-indicator" aria-hidden="true"></span></button></th><th scope="col" aria-sort="descending"><button type="button" class="host-sort" data-host-sort="rps">Req/Sec<span class="sort-indicator" aria-hidden="true"></span></button></th><th scope="col" aria-sort="none"><button type="button" class="host-sort" data-host-sort="inflight">In flight<span class="sort-indicator" aria-hidden="true"></span></button></th><th scope="col" aria-sort="none"><button type="button" class="host-sort" data-host-sort="rejected">4xx<span class="sort-indicator" aria-hidden="true"></span></button></th><th scope="col" aria-sort="none"><button type="button" class="host-sort" data-host-sort="cve_rejected">CVE blocks<span class="sort-indicator" aria-hidden="true"></span></button></th><th scope="col" aria-sort="none"><button type="button" class="host-sort" data-host-sort="errors_5xx">5xx<span class="sort-indicator" aria-hidden="true"></span></button></th><th scope="col" aria-sort="none"><button type="button" class="host-sort" data-host-sort="ddos">DDoS checkpoint<span class="sort-indicator" aria-hidden="true"></span></button></th></tr></thead><tbody id="hosts"><tr><td colspan="8" class="empty">Waiting for the first sample…</td></tr></tbody></table></div>
       <div class="table-footer"><span id="updated" class="detail">No sample yet</span><span class="detail">All tracked hosts · no pagination</span></div>

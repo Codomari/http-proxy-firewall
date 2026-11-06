@@ -7,6 +7,28 @@
   const state = {search: "", sort: "rps", direction: "descending", hosts: [], version: 0, previous: new Map(), previousTotal: null, previousRedis: null, timer: null, inflight: false, pending: false};
   let activeTab = "monitoring";
   const text = (id, value) => { byId(id).textContent = value; };
+  const collapsibleDefaults = new Map();
+  for (const panel of document.querySelectorAll("details[id]")) {
+    const key = `pf-admin:${base}:collapsible:${panel.id}`;
+    let preference = null;
+    try {
+      const saved = window.localStorage.getItem(key);
+      if (saved === "true" || saved === "false") preference = saved === "true";
+    } catch {}
+    if (preference !== null) panel.open = preference;
+    let open = panel.open;
+    const remember = () => {
+      if (panel.open === open) return;
+      preference = open = panel.open;
+      try { window.localStorage.setItem(key, String(open)); } catch {}
+    };
+    panel.addEventListener("toggle", remember);
+    collapsibleDefaults.set(panel.id, (expanded) => {
+      remember();
+      if (preference !== null) return;
+      open = panel.open = expanded;
+    });
+  }
   const percent = (value) => value == null ? "—" : `${rateNumber.format(value)}%`;
   const frequency = (count, previous, key, now) => previous && now > previous.time && count >= previous[key] ? (count - previous[key]) * 1000 / (now - previous.time) : null;
   const bytes = (value) => {
@@ -638,6 +660,11 @@
     byId("debug-client-ip").value = debug.clientIP;
     pollDebug();
   });
+  function collapsibleList(id) {
+    return (count) => collapsibleDefaults.get(id)(count <= 10);
+  }
+  const updateCertificateList = collapsibleList("certificates-panel");
+  const updateBlacklistList = collapsibleList("blacklist-panel");
   const certificates = {timer: null, controller: null, busy: false, manual: false, key: ""};
   const certificateDate = value => new Date(value).toISOString().replace("T", " ").replace(/(?:\.\d+)?Z$/, " UTC");
   function updateCertificateButton() {
@@ -665,6 +692,7 @@
       empty.colSpan = 5; empty.className = "empty"; rows.appendChild(row);
     }
     byId("certificates").replaceChildren(rows);
+    updateCertificateList(data.certificates.length);
     const requests = document.createDocumentFragment();
     for (const entry of data.requests) {
       const row = document.createElement("tr");
@@ -752,6 +780,7 @@
       fragment.appendChild(row);
     }
     byId("blacklist-hosts").replaceChildren(fragment);
+    updateBlacklistList(data.hosts.length);
   }
   function pauseBlacklist() {
     clearTimeout(blacklist.timer);
