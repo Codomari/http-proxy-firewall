@@ -21,6 +21,8 @@
       <button id="tab-logs" type="button" role="tab" aria-selected="false" aria-controls="view-logs" tabindex="-1">Logs</button>
       <button id="tab-rules" type="button" role="tab" aria-selected="false" aria-controls="view-rules" tabindex="-1">Rules</button>
       <button id="tab-debug" type="button" role="tab" aria-selected="false" aria-controls="view-debug" tabindex="-1">Debug</button>
+      <button id="tab-certbot" type="button" role="tab" aria-selected="false" aria-controls="view-certbot" tabindex="-1">CERTBOT</button>
+      <button id="tab-test-pages" type="button" role="tab" aria-selected="false" aria-controls="view-test-pages" tabindex="-1">TEST PAGES</button>
       <button id="tab-hosts" type="button" role="tab" aria-selected="false" aria-controls="view-hosts" tabindex="-1">Host Activity</button>
     </div>
     <div id="view-monitoring" role="tabpanel" aria-labelledby="tab-monitoring" tabindex="0">
@@ -66,6 +68,13 @@
       <div id="log-content" hidden><pre id="log-lines" class="log-lines" tabindex="0" aria-label="Service log lines"></pre><p class="log-note detail">Updates every 2 seconds. Scroll to the bottom to follow new lines. Lines over 4 KiB are truncated.</p></div>
     </section>
     </div>
+    <div id="view-test-pages" role="tabpanel" aria-labelledby="tab-test-pages" tabindex="0" hidden>
+      <section class="panel logs-panel" aria-labelledby="test-pages-title">
+        <div class="panel-header"><div><h2 id="test-pages-title">TEST PAGES</h2><p class="detail">Preview status pages without triggering a restart, blacklist or TLS failure. Links open in a new tab.</p></div></div>
+        <p id="test-pages-status" class="detail" role="status">Loading test pages…</p>
+        <div class="table-scroll"><table><thead><tr><th scope="col">Page</th><th scope="col">HTTP status</th><th scope="col">Preview</th></tr></thead><tbody id="test-pages-list"></tbody></table></div>
+      </section>
+    </div>
     <div id="view-rules" role="tabpanel" aria-labelledby="tab-rules" tabindex="0" hidden>
     <section class="panel logs-panel" aria-labelledby="general-rules-title">
       <div class="panel-header"><div><h2 id="general-rules-title">General settings</h2><p id="general-rules-status" class="detail" role="status">Loading YAML settings…</p></div></div>
@@ -74,6 +83,7 @@
         <label for="whitelist-networks">Whitelisted networks<textarea id="whitelist-networks" rows="4" maxlength="16384" placeholder="203.0.113.0/24&#10;2001:db8::/32" spellcheck="false"></textarea><span class="detail">CIDR networks. Loopback networks remain included automatically.</span></label>
         <label for="allowed-countries">Whitelisted countries<textarea id="allowed-countries" rows="4" maxlength="8192" placeholder="Azerbaijan&#10;Turkey" spellcheck="false"></textarea><span class="detail">Country names, one per line or separated by commas.</span></label>
         <label class="search-label" for="ddos-threshold">DDoS threshold (requests/second per hostname)<input id="ddos-threshold" type="number" min="1" max="1000000000" step="1" value="200" required><span class="detail">Average request rate over the sampling window. Changes apply immediately; existing penalties keep their expiry.</span></label>
+        <label class="search-label" for="upstream-request-retry-times">Upstream request retries<input id="upstream-request-retry-times" type="number" min="0" step="1" value="3" required><span class="detail">Additional retries after a closed upstream connection, for GET/HEAD requests without a body. Default: 3. Set 0 to disable. Saving applies immediately to all upstream routes.</span></label>
         <fieldset><legend>Cookie checkpoint for whitelisted clients</legend><label class="checkpoint-option"><input id="ip-checkpoint" type="checkbox" checked>Apply cookie checkpoint to whitelisted IPs and networks</label><label class="checkpoint-option"><input id="country-checkpoint" type="checkbox" checked>Apply cookie checkpoint to whitelisted countries</label><p class="detail">Applies when the hostname is under a DDoS penalty. CVE/body validation and bot-query rules always apply. If both lists match, an enabled checkpoint takes priority. Static-file exemptions continue to apply.</p></fieldset>
         <div class="general-rules-actions"><button id="general-rules-save" type="submit" disabled>Save general settings</button><span id="general-rules-feedback" class="detail" role="status"></span></div>
       </form>
@@ -98,6 +108,22 @@
       <div id="debug-scroll" class="table-scroll debug-table-scroll" tabindex="0" aria-label="Debug requests"><table class="debug-table"><thead><tr><th scope="col">Time (UTC)</th><th scope="col">Client IP</th><th scope="col">Hostname</th><th scope="col">Method</th><th scope="col">URL</th><th scope="col">Duration</th><th scope="col">Status</th><th scope="col">Request received</th><th scope="col">Response sent</th></tr></thead><tbody id="debug-rows"></tbody></table></div>
       <p id="debug-empty" class="log-note detail">Enable a capture rule to see matching requests.</p>
       <p id="debug-status" class="log-note detail" role="status">Pulls matching requests every 2 seconds · latest 100 initially · retains up to 10,000 rows</p>
+    </section>
+    </div>
+    <div id="view-certbot" role="tabpanel" aria-labelledby="tab-certbot" tabindex="0" hidden>
+    <section class="panel logs-panel" aria-labelledby="certificates-title">
+      <div class="panel-header"><div><h2 id="certificates-title">Certificates</h2><p id="certificates-status" class="detail" role="status">Loading certificates…</p></div></div>
+      <form id="certificate-form" class="debug-controls"><label class="search-label" for="certificate-hostname">Hostname<input id="certificate-hostname" type="text" placeholder="example.com" maxlength="253" autocomplete="off" spellcheck="false" required></label><button id="certificate-request" type="submit" disabled>Request certificate</button></form>
+      <p id="certificate-feedback" class="log-note detail" role="status">Remove a blacklisted hostname below before requesting its certificate. Hostnames marked Behind CloudFlare are excluded.</p>
+      <div id="certificate-error" class="error debug-error" role="alert" hidden></div>
+      <div class="table-scroll"><table class="blacklist-table"><thead><tr><th scope="col">Hostname / names</th><th scope="col">Issuer</th><th scope="col">Valid from (UTC)</th><th scope="col">Expires (UTC)</th><th scope="col">Source</th></tr></thead><tbody id="certificates"><tr><td colspan="5" class="empty">Loading certificates…</td></tr></tbody></table></div>
+      <div class="table-scroll"><table class="blacklist-table"><thead><tr><th scope="col">Requested hostname</th><th scope="col">Status</th><th scope="col">Started (UTC)</th><th scope="col">Details</th></tr></thead><tbody id="certificate-requests"><tr><td colspan="4" class="empty">No manual certificate requests.</td></tr></tbody></table></div>
+    </section>
+    <section class="panel logs-panel" aria-labelledby="blacklist-title">
+      <div class="panel-header"><div><h2 id="blacklist-title">BLACKLIST</h2><p id="blacklist-status" class="detail" role="status">Loading blacklisted hostnames…</p></div></div>
+      <p class="log-note detail">Hostnames that fail certificate verification are blocked for 14 days. Remove an entry to allow verification again on its next certificate request.</p>
+      <div id="blacklist-error" class="error debug-error" role="alert" hidden></div>
+      <div class="table-scroll"><table class="blacklist-table"><thead><tr><th scope="col">Hostname</th><th scope="col">Expires (UTC)</th><th scope="col">Action</th></tr></thead><tbody id="blacklist-hosts"><tr><td colspan="3" class="empty">Loading blacklisted hostnames…</td></tr></tbody></table></div>
     </section>
     </div>
     <div id="view-hosts" role="tabpanel" aria-labelledby="tab-hosts" tabindex="0" hidden>

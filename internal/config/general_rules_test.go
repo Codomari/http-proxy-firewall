@@ -71,7 +71,7 @@ func TestGeneralRulesRejectInvalidInputsAndUnsafeFiles(t *testing.T) {
 	for _, rules := range []GeneralRules{
 		{WhitelistIPs: []string{"203.0.113.1/24"}, DDoSThreshold: 200}, {WhitelistIPs: []string{"fe80::1%eth0"}, DDoSThreshold: 200},
 		{WhitelistNetworks: []string{"not-a-network"}, DDoSThreshold: 200}, {AllowedCountries: []string{"Turkey\nREDIS_PASSWORD=changed"}, DDoSThreshold: 200},
-		{DDoSThreshold: 0}, {DDoSThreshold: 1_000_000_001},
+		{DDoSThreshold: 0}, {DDoSThreshold: 1_000_000_001}, {DDoSThreshold: 200, UpstreamRequestRetryTimes: -1},
 	} {
 		if _, err := rules.Normalize(); err == nil {
 			t.Fatalf("invalid settings accepted: %+v", rules)

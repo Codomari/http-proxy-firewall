@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.3.30 — 2026-11-06
+
+Fifteen logical user-facing changes since 0.3.15, following the project's patch-count convention.
+
+### Added
+
+- Validate certificate hostnames before network checks: require two or more nonempty labels, a letter, and no IP addresses. Verify eligible hostnames before issuance and renewal with three HTTP HEAD attempts, each limited to one second, and a fresh per-host `X-DNS-SIGNATURE`. A one-second DNS fallback accepts only a public IP assigned to this server. Loopback/private addresses and hostnames marked Behind CloudFlare by live rules cannot authorize issuance.
+- Persist failed hostname checks for 14 days in `.certbot.blacklist`, with atomic private-file updates and expiry across restarts. Requests for blacklisted hostnames return a 409 Conflict page asking the operator to point the domain to this server.
+- Add the CERTBOT admin tab with certificate names, issuer, validity and source; expiring blacklist entries with removal controls; and asynchronous manual certificate requests that retain all admission checks.
+- Support native HTTPS HTTP/2 negotiation through the existing firewall, admin and proxy pipeline, including response streaming, body limits and graceful connection shutdown.
+- Translate restart and blocked-hostname pages into Azerbaijani, English, Turkish, Russian, Ukrainian, German, Italian, Spanish, Portuguese, Kazakh (Kazakhstan) and Japanese. Select the language using the verified client IP country, with English as the default. Restart messages include reassurance that the server will return shortly.
+- Embed an unlimited tic-tac-toe game against the computer on a responsive 12×12 restart-page board, with five in a row to win. Visitors who start playing keep their game after recovery and receive a ready message plus a Return to website button; other visitors reconnect automatically.
+- Return a translated 409 Conflict page for TLS requests without a hostname in SNI: "Secure request without hostname not allowed." Use the configured certificate or an in-memory fallback to complete TLS without invoking automatic certificate issuance; clients enforcing certificate trust may stop before receiving the HTTP page.
+- Add an 11-language selector to both 409 pages and the restart page, updating text without a reload or game reset and remembering the preference per site.
+- Save the board and pending turn in local storage to resume later, with a Start fresh button that clears saved progress and cancels a pending computer move.
+- Preserve the selected admin tab in the URL hash for refreshes and direct links, with a safe default for unknown tab names.
+- Add a TEST PAGES admin tab and authenticated, extensible status previews under `/<PF_ADMIN_URI>/test/pages/`, including restart, blocked-hostname and missing-TLS-hostname pages without changing server state.
+
+### Changed
+
+- Replace the restart screen's three-second countdown and Retry-After delay with an indeterminate request animation and immediate background recovery checking. Keep all page styles, scripts, translations and game assets embedded in the binary.
+- Configure additional upstream connection retries with `PF_UPSTREAM_REQUEST_RETRY_TIMES`, defaulting to `3`; `0` disables retries. Admin General settings saves apply immediately to all upstream routes and persist to the private YAML override. Empty GET/HEAD requests can recover from connection closure, reset or a broken pipe after stale idle connections are cleared; submitted actions, timeouts, TLS failures and HTTP error responses are not replayed.
+- Include the canonical hostname in certificate guard errors returned to TLS and ACME callers, preserving error classification and structured hostname logs.
+- Route HTTP/2 warnings through the same sampled structured logger as HTTP/1, including labelled time, level, message, peer IP, error and known hostname/SNI instead of standard-library text logs.
+
 ## 0.3.15
 
 Three user-facing changes since 0.3.12, following the project's patch-count convention.

@@ -369,9 +369,11 @@
     byId("debug-empty").hidden = body.childElementCount > 0;
     text("debug-status", `${debug.enabled ? "Live" : "Capture disabled"} · ${number.format(body.childElementCount)} / 10,000 requests · pulls every 2 seconds${data.reset && body.childElementCount > data.entries.length ? " · log restarted or rotated" : ""}${debug.limited ? " · some log content was truncated" : ""}${debug.unparsed ? " · unparsed entries shown as text" : ""}`);
   }
-  const generalRules = {busy: false, dirty: false, key: "", available: false, controller: null};
+  const generalRules = {busy: false, dirty: false, key: "", available: false, upstreamAvailable: false, controller: null};
   function renderGeneralRules(data, saved = false) {
     generalRules.available = data.available;
+    generalRules.upstreamAvailable = data.upstream_available;
+    byId("upstream-request-retry-times").disabled = generalRules.busy || !data.upstream_available;
     byId("general-rules-save").disabled = generalRules.busy || !data.available;
     const key = JSON.stringify(data);
     if ((!generalRules.dirty || saved) && key !== generalRules.key) {
@@ -381,6 +383,7 @@
       byId("ip-checkpoint").checked = data.ip_checkpoint;
       byId("country-checkpoint").checked = data.country_checkpoint;
       byId("ddos-threshold").value = String(data.ddos_threshold);
+      byId("upstream-request-retry-times").value = String(data.upstream_request_retry_times);
       generalRules.key = key;
     }
     text("general-rules-status", data.available ? "Global rules · loaded from YAML · saved changes apply immediately" : "General rules are unavailable.");
@@ -416,6 +419,7 @@
     byId("general-rules-error").hidden = true;
     const list = id => byId(id).value.split(/[,\r\n]+/).map(value => value.trim()).filter(Boolean);
     const settings = {whitelist_ips: list("whitelist-ips"), whitelist_networks: list("whitelist-networks"), allowed_countries: list("allowed-countries"), ip_checkpoint: byId("ip-checkpoint").checked, country_checkpoint: byId("country-checkpoint").checked, ddos_threshold: Number(byId("ddos-threshold").value)};
+    if (generalRules.upstreamAvailable) settings.upstream_request_retry_times = Number(byId("upstream-request-retry-times").value);
     const inputs = byId("general-rules-form").querySelectorAll("input, textarea");
     for (const input of inputs) input.disabled = true;
     const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 10000);
@@ -434,6 +438,7 @@
       clearTimeout(timeout);
       generalRules.busy = false;
       for (const input of inputs) input.disabled = false;
+      byId("upstream-request-retry-times").disabled = !generalRules.upstreamAvailable;
       byId("general-rules-save").disabled = !generalRules.available;
     }
   });
@@ -612,10 +617,220 @@
     byId("debug-client-ip").value = debug.clientIP;
     pollDebug();
   });
-  const tabNames = ["monitoring", "logs", "rules", "debug", "hosts"];
+  const certificates = {timer: null, controller: null, busy: false, manual: false, key: ""};
+  const certificateDate = value => new Date(value).toISOString().replace("T", " ").replace(/(?:\.\d+)?Z$/, " UTC");
+  function updateCertificateButton() {
+    byId("certificate-request").disabled = certificates.busy || !certificates.manual || !byId("certificate-hostname").value.trim();
+  }
+  function renderCertificates(data) {
+    certificates.manual = data.manual_available;
+    updateCertificateButton();
+    text("certificates-status", `${number.format(data.certificates.length)} certificates · ${data.manual_available ? "Automatic certificate requests enabled" : "Manual requests unavailable; automatic TLS is disabled"}`);
+    const key = JSON.stringify(data);
+    if (key === certificates.key) return;
+    certificates.key = key;
+    const rows = document.createDocumentFragment();
+    for (const entry of data.certificates) {
+      const row = document.createElement("tr");
+      cell(row, entry.names.length ? entry.names.join(", ") : entry.hostname);
+      cell(row, entry.issuer);
+      cell(row, certificateDate(entry.not_before));
+      cell(row, certificateDate(entry.expires));
+      cell(row, entry.source);
+      rows.appendChild(row);
+    }
+    if (!data.certificates.length) {
+      const row = document.createElement("tr"), empty = cell(row, "No certificates found.");
+      empty.colSpan = 5; empty.className = "empty"; rows.appendChild(row);
+    }
+    byId("certificates").replaceChildren(rows);
+    const requests = document.createDocumentFragment();
+    for (const entry of data.requests) {
+      const row = document.createElement("tr");
+      cell(row, entry.hostname); cell(row, entry.status); cell(row, certificateDate(entry.started));
+      cell(row, entry.message || (entry.status === "issued" ? "Certificate available" : "Request in progress…"));
+      requests.appendChild(row);
+    }
+    if (!data.requests.length) {
+      const row = document.createElement("tr"), empty = cell(row, "No manual certificate requests.");
+      empty.colSpan = 4; empty.className = "empty"; requests.appendChild(row);
+    }
+    byId("certificate-requests").replaceChildren(requests);
+  }
+  function pauseCertificates() {
+    clearTimeout(certificates.timer);
+    if (certificates.controller) { certificates.controller.abort(); certificates.controller = null; }
+  }
+  async function pollCertificates() {
+    if (activeTab !== "certbot" || document.hidden || certificates.busy || certificates.controller) return;
+    clearTimeout(certificates.timer);
+    const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 10000);
+    certificates.controller = controller;
+    try {
+      const response = await fetch(`${base}/api/certificates`, {credentials: "same-origin", cache: "no-store", signal: controller.signal});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      if (certificates.controller === controller && !controller.signal.aborted) renderCertificates(data);
+    } catch (error) {
+      if (certificates.controller === controller) text("certificates-status", error.name === "AbortError" ? "Certificate listing timed out. Retrying…" : error.message);
+    } finally {
+      clearTimeout(timeout);
+      if (certificates.controller === controller) {
+        certificates.controller = null;
+        if (activeTab === "certbot" && !document.hidden) certificates.timer = setTimeout(pollCertificates, 2000);
+      }
+    }
+  }
+  byId("certificate-hostname").addEventListener("input", updateCertificateButton);
+  byId("certificate-form").addEventListener("submit", async event => {
+    event.preventDefault();
+    if (certificates.busy || !certificates.manual) return;
+    pauseCertificates();
+    certificates.busy = true; updateCertificateButton();
+    byId("certificate-error").hidden = true;
+    const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+      const query = new URLSearchParams({hostname: byId("certificate-hostname").value.trim()});
+      const response = await fetch(`${base}/api/certificates?${query}`, {method: "POST", headers: {"X-PF-Admin": "1"}, credentials: "same-origin", cache: "no-store", signal: controller.signal});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      text("certificate-feedback", data.message);
+    } catch (error) {
+      text("certificate-error", error.name === "AbortError" ? "Request timed out. Refreshing certificate status…" : error.message);
+      byId("certificate-error").hidden = false;
+    } finally {
+      clearTimeout(timeout);
+      certificates.busy = false; updateCertificateButton();
+      pollCertificates();
+    }
+  });
+  const blacklist = {timer: null, controller: null, busy: false, key: ""};
+  function renderBlacklist(data) {
+    text("blacklist-status", data.available ? `${number.format(data.hosts.length)} blacklisted hostnames · expires automatically after 14 days` : "Certificate blacklist is unavailable.");
+    const key = JSON.stringify(data);
+    if (key === blacklist.key) return;
+    blacklist.key = key;
+    const fragment = document.createDocumentFragment();
+    for (const entry of data.hosts) {
+      const row = document.createElement("tr");
+      cell(row, entry.hostname);
+      cell(row, certificateDate(entry.expires));
+      const action = cell(row, ""), button = document.createElement("button");
+      button.type = "button";
+      button.textContent = "Remove";
+      button.disabled = blacklist.busy || !data.available;
+      button.setAttribute("aria-label", `Remove ${entry.hostname} from the certificate blacklist`);
+      button.addEventListener("click", () => removeBlacklist(entry.hostname));
+      action.appendChild(button);
+      fragment.appendChild(row);
+    }
+    if (!data.hosts.length) {
+      const row = document.createElement("tr"), empty = cell(row, data.available ? "No blacklisted hostnames." : "Certificate blacklist is unavailable.");
+      empty.colSpan = 3;
+      empty.className = "empty";
+      fragment.appendChild(row);
+    }
+    byId("blacklist-hosts").replaceChildren(fragment);
+  }
+  function pauseBlacklist() {
+    clearTimeout(blacklist.timer);
+    if (blacklist.controller) { blacklist.controller.abort(); blacklist.controller = null; }
+  }
+  async function pollBlacklist() {
+    if (activeTab !== "certbot" || document.hidden || blacklist.busy || blacklist.controller) return;
+    clearTimeout(blacklist.timer);
+    const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 10000);
+    blacklist.controller = controller;
+    try {
+      const response = await fetch(`${base}/api/certbot-blacklist`, {credentials: "same-origin", cache: "no-store", signal: controller.signal});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      if (blacklist.controller === controller && !controller.signal.aborted) {
+        renderBlacklist(data);
+        byId("blacklist-error").hidden = true;
+      }
+    } catch (error) {
+      if (blacklist.controller === controller) {
+        text("blacklist-error", error.name === "AbortError" ? "Blacklist request timed out. Retrying…" : error.message);
+        byId("blacklist-error").hidden = false;
+      }
+    } finally {
+      clearTimeout(timeout);
+      if (blacklist.controller === controller) {
+        blacklist.controller = null;
+        if (activeTab === "certbot" && !document.hidden) blacklist.timer = setTimeout(pollBlacklist, 2000);
+      }
+    }
+  }
+  async function removeBlacklist(hostname) {
+    if (blacklist.busy) return;
+    pauseBlacklist();
+    blacklist.busy = true;
+    for (const button of byId("blacklist-hosts").querySelectorAll("button")) button.disabled = true;
+    byId("blacklist-error").hidden = true;
+    const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+      const query = new URLSearchParams({hostname});
+      const response = await fetch(`${base}/api/certbot-blacklist?${query}`, {method: "DELETE", headers: {"X-PF-Admin": "1"}, credentials: "same-origin", cache: "no-store", signal: controller.signal});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      renderBlacklist(data);
+      byId("certificate-hostname").value = hostname;
+      text("certificate-feedback", `${hostname} was removed from BLACKLIST. You can now request its certificate.`);
+      updateCertificateButton();
+    } catch (error) {
+      text("blacklist-error", error.name === "AbortError" ? "Removal timed out. Refreshing the blacklist…" : error.message);
+      byId("blacklist-error").hidden = false;
+    } finally {
+      clearTimeout(timeout);
+      blacklist.busy = false;
+      for (const button of byId("blacklist-hosts").querySelectorAll("button")) button.disabled = false;
+      if (activeTab === "certbot" && !document.hidden) blacklist.timer = setTimeout(pollBlacklist, 2000);
+    }
+  }
+  const testPages = {controller: null};
+  function pauseTestPages() {
+    if (testPages.controller) { testPages.controller.abort(); testPages.controller = null; }
+  }
+  async function loadTestPages() {
+    if (activeTab !== "test-pages" || document.hidden || testPages.controller) return;
+    const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 10000);
+    testPages.controller = controller;
+    try {
+      const response = await fetch(`${base}/api/test-pages`, {credentials: "same-origin", cache: "no-store", signal: controller.signal});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      if (testPages.controller !== controller || controller.signal.aborted) return;
+      const fragment = document.createDocumentFragment();
+      for (const page of data.pages) {
+        if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(page.name)) continue;
+        const row = document.createElement("tr");
+        cell(row, page.title); cell(row, String(page.status));
+        const link = document.createElement("a");
+        link.href = `${base}/test/pages/${page.name}`;
+        link.textContent = link.href;
+        link.target = "_blank"; link.rel = "noopener";
+        cell(row, "").appendChild(link);
+        fragment.appendChild(row);
+      }
+      byId("test-pages-list").replaceChildren(fragment);
+      text("test-pages-status", `${data.pages.length} status page previews · previews keep their real HTTP status`);
+    } catch (error) {
+      if (testPages.controller === controller && !controller.signal.aborted) text("test-pages-status", `Unable to load test pages: ${error.message}`);
+    } finally {
+      clearTimeout(timeout);
+      if (testPages.controller === controller) testPages.controller = null;
+    }
+  }
+  const tabNames = ["monitoring", "logs", "rules", "debug", "certbot", "hosts", "test-pages"];
+  function tabFromHash() {
+    const name = window.location.hash.slice(1).toLowerCase();
+    return tabNames.includes(name) ? name : "monitoring";
+  }
   function selectTab(name, focus = false) {
     activeTab = name;
-    document.title = `Codomari | Proxy-Firewall | ${name === "hosts" ? "Host Activity" : name[0].toUpperCase() + name.slice(1)}`;
+    if (window.location.hash !== `#${name}`) window.history.replaceState(null, "", `#${name}`);
+    document.title = `Codomari | Proxy-Firewall | ${name === "hosts" ? "Host Activity" : name === "certbot" ? "CERTBOT" : name === "test-pages" ? "TEST PAGES" : name[0].toUpperCase() + name.slice(1)}`;
     for (const candidate of tabNames) {
       const button = byId(`tab-${candidate}`), selected = candidate === name;
       button.setAttribute("aria-selected", String(selected));
@@ -628,6 +843,8 @@
     } else pollLogs();
     if (name === "debug") pollDebug(); else pauseDebug();
     if (name === "rules") pollRules(); else pauseRules();
+    if (name === "certbot") { pollBlacklist(); pollCertificates(); } else { pauseBlacklist(); pauseCertificates(); }
+    if (name === "test-pages") loadTestPages(); else pauseTestPages();
     if (focus) byId(`tab-${name}`).focus();
   }
   for (const [index, name] of tabNames.entries()) {
@@ -637,6 +854,7 @@
       if (next !== null) { event.preventDefault(); selectTab(tabNames[next], true); }
     });
   }
+  window.addEventListener("hashchange", () => selectTab(tabFromHash()));
   function schedule() {
     clearTimeout(state.timer);
     if (!document.hidden) state.timer = setTimeout(poll, 2000);
@@ -682,16 +900,22 @@
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => { state.search = event.target.value; state.version++; state.previous.clear(); poll(); }, 250);
   });
-  byId("refresh").addEventListener("click", () => { poll(); pollLogs(); pollRules(); pollDebug(); });
+  byId("refresh").addEventListener("click", () => { poll(); pollLogs(); pollRules(); pollDebug(); pollBlacklist(); pollCertificates(); loadTestPages(); });
   document.addEventListener("visibilitychange", () => {
     clearTimeout(state.timer);
     clearTimeout(logs.timer);
     pauseDebug();
     pauseRules();
+    pauseBlacklist();
+    pauseCertificates();
+    pauseTestPages();
     if (!document.hidden) pollRules();
     if (!document.hidden) pollDebug();
     if (!document.hidden) pollLogs();
+    if (!document.hidden) { pollBlacklist(); pollCertificates(); }
+    if (!document.hidden) loadTestPages();
     if (document.hidden) connection("Paused", "paused"); else { connection("Connecting", "connecting"); poll(); }
   });
+  selectTab(tabFromHash());
   poll();
 })();

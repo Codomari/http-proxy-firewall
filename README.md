@@ -1,6 +1,6 @@
 # http-proxy-firewall
 
-Version **0.3.15** · [Changelog](CHANGELOG.md) · [MIT license](LICENSE)
+Version **0.3.30** · [Changelog](CHANGELOG.md) · [MIT license](LICENSE)
 
 A reverse proxy and Layer 7 firewall that sits in front of your web applications. It checks requests before forwarding them, adds a cookie checkpoint during traffic spikes, and provides an embedded admin dashboard.
 
@@ -140,12 +140,13 @@ The names below work both as process environment variables and as `env[].key` en
 | Redirect requests whose Host is an IPv4 address | `PF_IPV4_REDIRECT`; empty disables the default `https://hostinq.biz` redirect. |
 | HTTPS and certificates | `PF_TLS_ENABLED`, `PF_TLS_HOSTS`, `LETSENCRYPT_EMAIL`, `PF_TLS_CACHE_DIR`, `PF_TLS_CERT_FILE`, `PF_TLS_KEY_FILE`, `PF_TLS_ALLOW_LEGACY` |
 | Trusted proxies and Cloudflare fallback | `PF_TRUSTED_PROXIES`, `PF_TRUST_CLOUDFLARE_HEADER` |
-| Whitelists, checkpoint switches and DDoS threshold | The six settings editable in [General settings](#general-settings). |
+| Whitelists, checkpoint switches, DDoS threshold and upstream retries | The settings editable in [General settings](#general-settings). |
 | Penalty and cookie lifetimes | `DOS_DETECTOR_HOSTNAME_PENALTY_LIFETIME`, `PF_COOKIE_LIFETIME` |
 | Body inspection and cache limits | `CVE_MITIGATOR_MAX_BODY_BYTES`, `PF_MAX_BUFFERED_BYTES`, `CVE_MITIGATOR_UPLOAD_PROGRESS_NAMES`, `PF_CACHE_CAPACITY` |
 | Connection and request limits | `PF_MAX_CONNECTIONS`, `PF_MAX_CONCURRENT_REQUESTS`, `PF_UPSTREAM_MAX_CONNECTIONS` |
 | Incoming timeouts | `PF_READ_TIMEOUT`, `PF_WRITE_TIMEOUT`, `PF_IDLE_TIMEOUT` |
 | Upstream timeouts | `PF_UPSTREAM_READ_TIMEOUT`, `PF_UPSTREAM_WRITE_TIMEOUT`, `PF_UPSTREAM_IDLE_TIMEOUT` |
+| Upstream connection retries | `PF_UPSTREAM_REQUEST_RETRY_TIMES` (`3` additional retries; `0` disables) |
 | Optional Redis storage | `PF_ENABLE_REDIS`, `REDIS_ADDRESS`, `REDIS_PASSWORD`, `REDIS_DB`, `REDIS_TIMEOUT`, `REDIS_QUEUE_SIZE`, `REDIS_WORKERS` |
 | Country database and Googlebot ranges | `MAXMIND_DATABASE_PATH`, `MAXMIND_LICENSE_KEY`, `PF_GOOGLE_RANGES_URL`, `PF_INTELLIGENCE_REFRESH_INTERVAL`, `PF_INTELLIGENCE_HTTP_TIMEOUT` |
 | Admin access | `PF_ADMIN_CREDS_FILE`, `PF_ADMIN_URI`, `PF_ADMIN_ENABLED`, `PF_ADMIN_MAX_HOSTS` |
@@ -161,7 +162,13 @@ env:
 
 Unmatched hostnames use `PF_PROXY_TO`. Each configured origin has its own shared connection pool.
 
-To use a static TLS certificate, supply **both** `PF_TLS_CERT_FILE` and `PF_TLS_KEY_FILE`; this skips ACME. TLS defaults to enabled on port 443 with TLS 1.2 as the minimum. Legacy TLS 1.0/1.1 requires `PF_TLS_ALLOW_LEGACY=true` or `--tls-legacy`. Native listeners serve HTTP/1.1; place a frontend proxy ahead of them for HTTP/2 or HTTP/3 termination.
+To use a static TLS certificate, supply **both** `PF_TLS_CERT_FILE` and `PF_TLS_KEY_FILE`; this skips ACME. TLS defaults to enabled on port 443 with TLS 1.2 as the minimum. Legacy TLS 1.0/1.1 requires `PF_TLS_ALLOW_LEGACY=true` or `--tls-legacy`. HTTPS negotiates HTTP/2 (`h2`) or HTTP/1.1, using the same firewall, routes, admin APIs and streamed responses. Plain HTTP and HTTP/1 upgrades retain their native handling. HTTP/3 requires a frontend proxy.
+
+Before obtaining an automatic certificate, the server excludes hostnames marked **Behind CloudFlare** by the current domain rules and checks `PF_TLS_HOSTS`. It then sends HEAD to `http://hostname/<PF_ADMIN_URI>/dns/test`, making at most three attempts with a one-second timeout per HTTP request. This public, HEAD-only endpoint returns `X-DNS-SIGNATURE` and records the random signature in a shared, bounded hostname map. A matching fresh signature proves the request reached this process; redirects and environment HTTP proxies are not used.
+
+Hostname validation runs before HTTP or DNS verification: names must have at least two nonempty DNS labels, contain a letter, and cannot be IP addresses. Numeric labels such as `123.example` are allowed; numeric-only names and single-label hosts are rejected without network checks or blacklist entries.
+
+If the HTTP attempts fail or the signature is wrong, a DNS lookup with a one-second timeout accepts only a real public IPv4/IPv6 address assigned to this server. Loopback, private, shared, link-local, documentation and reserved ranges are rejected, including for the outbound HEAD connection. Other hostnames are blocked before certificate issuance and saved for 14 days in `.certbot.blacklist` in the working directory (`/etc/proxy-firewall` under systemd). Each line is `hostname|expires:2026-11-20T13:00:00Z`. Expiry is checked after restart; file updates are private and atomic. Successful checks are cached for one minute to avoid duplicate probes within an issuance or on ordinary TLS handshakes. The same gate covers background renewal orders. Cloudflare exclusions follow exact, www-alias and wildcard rule precedence and are not added to the failure blacklist; existing valid cached certificates remain usable.
 
 `./bin/proxy-firewall --help` lists the available flags. Not every environment setting has a corresponding flag.
 
@@ -201,11 +208,19 @@ Set `PF_ADMIN_ENABLED=false` to disable the interface explicitly. With no creden
 | **Logs** | Read and follow the service log. |
 | **Rules** | Edit general firewall settings and per-domain Cloudflare rules. |
 | **Debug** | Enable concurrent hostname/source captures and inspect requests and responses. |
+| **CERTBOT** | List certificates and request status, remove entries from **BLACKLIST**, and manually request a certificate. |
+| **TEST PAGES** | Open authenticated restart, blocked-hostname and missing-TLS-hostname previews without changing server state. |
 | **Host Activity** | Search and sort per-host requests, rates, in-flight work, CVE blocks, errors and DDoS checkpoint state. |
 
-The dashboard is compiled into the binary, with no external fonts, CDN or frontend build step. All assets and APIs require authentication. Polling runs every two seconds and pauses when the browser tab is hidden; tab-specific views pause when you leave them.
+The dashboard is compiled into the binary, with no external fonts, CDN or frontend build step. All assets and APIs require authentication. The separate HEAD-only DNS test endpoint is public even when admin is disabled. Polling runs every two seconds and pauses when the browser tab is hidden; tab-specific views pause when you leave them.
+
+Under **CERTBOT**, the certificate list shows hostname/names, issuer, validity dates and whether a certificate is automatic or static; private keys are never returned. **Remove** deletes a blacklist entry from memory and disk and fills the manual request form. Press **Request certificate** to start an asynchronous request; the status table reports requesting, issued or failed. Automatic TLS must be enabled, and requests still enforce Cloudflare exclusions, the hostname allowlist and DNS/signature verification. Existing usable certificates may be reused. Manual requests never automatically override a blacklist entry. Requests to an actively blacklisted hostname return a 409 Conflict page: "Hostname blacklisted. Make sure requested domain points to current server." Use an unblocked hostname or the origin IP to access admin controls. HTTPS can display the page only when a usable certificate already exists; otherwise TLS is refused without requesting a new certificate.
 
 Sections are collapsible. Focus a tab and use the arrow keys, Home or End to switch views. Host Activity starts sorted by request rate; click a column heading to change the sort order.
+
+The selected tab is stored in the URL hash, so refreshes and direct links restore the view: `#monitoring`, `#logs`, `#rules`, `#debug`, `#certbot`, `#hosts` and `#test-pages`. Unknown hashes return to Monitoring.
+
+Open **TEST PAGES** to inspect status pages in a new tab. With the default admin URI, previews are `/__pf/__admin/test/pages/restart`, `/__pf/__admin/test/pages/blocked-hostname` and `/__pf/__admin/test/pages/tls-hostname`; `/__pf/__admin/test/pages` lists registered previews. They require admin authentication and return their real 540/409 status. The restart preview keeps returning 540 to HEAD probes, so it stays open for testing. Previewing pages can save browser game/language preferences but never restarts the server, changes its blacklist or requests a certificate. Register future previews through the shared test-page registry.
 
 ### General settings
 
@@ -219,8 +234,11 @@ Open **Rules → General settings**, edit the fields, then press **Save general 
 | Apply cookie checkpoint to whitelisted IPs and networks | `IP_FILTER_WHITELIST_CHECKPOINT` | `true` |
 | Apply cookie checkpoint to whitelisted countries | `IP_FILTER_COUNTRIES_CHECKPOINT` | `true` |
 | DDoS threshold in requests/second per hostname | `DOS_DETECTOR_HOSTNAME_REQUEST_THRESHOLD` | `200` |
+| Upstream request retries | `PF_UPSTREAM_REQUEST_RETRY_TIMES` | `3` additional retries; `0` disables |
 
 Enter IPs, CIDR networks and English country names using commas or newlines. Each whitelist accepts up to 512 entries. The DDoS threshold accepts integers from 1 to 1,000,000,000 and uses a ten-second sampling window.
+
+Upstream request retries accepts a non-negative integer. Saving applies immediately to new requests on every upstream route and persists the value to the private override YAML. A value of `5` allows the initial attempt plus five retries; `0` allows just the initial attempt. Only connection closure, reset or broken pipe errors on GET/HEAD requests without a body qualify.
 
 ```mermaid
 flowchart LR
@@ -316,6 +334,9 @@ All paths below are relative to `/<PF_ADMIN_URI>`, which defaults to `/__pf/__ad
 | `/api/cloudflare-hosts` | Read rules; POST adds and DELETE removes a hostname rule. Up to 256 effective rules are supported. |
 | `/api/debug` | GET reads capture status; POST enables and DELETE disables a capture using `hostname` and optional `client_ip` query parameters. |
 | `/api/debug/logs` | Cursor-based reads for the selected capture, returning structured `entries` alongside original `lines`. |
+| `/api/certbot-blacklist` | GET lists active hostnames and expiry; DELETE with `hostname` removes an entry from memory and disk. |
+| `/api/certificates` | GET lists certificate metadata and manual-request status; POST with `hostname` starts a guarded certificate request. |
+| `/api/test-pages` | GET lists registered status-page preview names, titles and HTTP status codes. |
 
 Editing General settings pauses background replacement of unsaved form fields. Save errors are shown in the panel; if YAML was saved but runtime application failed, the API reports that a restart is required.
 
@@ -351,7 +372,11 @@ To stage an installation without writing to `/etc`, use `make install DESTDIR=/a
 
 ### What happens during a restart?
 
-A graceful stop briefly returns **540 Server Restarting**, `Retry-After: 3` and an embedded recovery page on public and admin URLs. The page counts down, probes the current URL with HEAD, and resumes with one GET after a 2xx/3xx response. Forms are never automatically resubmitted. Connection failures and 4xx/5xx responses keep the page retrying.
+A graceful stop briefly returns **540 Server Restarting** and an embedded recovery page on public and admin URLs. The page shows "Server restarting", "Do not worry (:" and "We are coming back in few seconds", with a loading animation and no countdown or Retry-After delay. It probes the current URL with HEAD immediately and quietly checks again after failed probes. An embedded tic-tac-toe game against the computer uses a responsive 12×12 board, with five in a row horizontally, vertically or diagonally to win and unlimited rounds. The board and whose turn comes next are saved in local storage on this browser and site, so the next restart screen can resume the game. **Start fresh** clears the saved board immediately, including a pending computer move. If the visitor has started playing, recovery shows a ready message and a **Return to website** button; the game remains available. Otherwise recovery resumes with one GET after a 2xx/3xx response. Forms are never automatically resubmitted. Connection failures and 4xx/5xx responses keep the recovery page visible.
+
+Restart and hostname-blacklist pages select Azerbaijani, English, Turkish, Russian, Ukrainian, German, Italian, Spanish, Portuguese, Kazakh (Kazakhstan) or Japanese using the verified client IP's country from the local MaxMind database. Azerbaijan, Turkey, Russia, Ukraine, Germany, Italy, Spain, Portugal, Kazakhstan and Japan select their respective languages; other or unknown countries use English. Forwarding headers follow the existing proxy trust rules. Both 409 pages and the restart page also have a language selector; it updates the page in place, preserves game progress, and remembers the selected language in local storage for this site. All translations, HTML, styles, scripts, icons and game code are embedded in the binary; these pages need no external assets.
+
+TLS requests without a hostname in SNI receive a translated **409 Conflict** page: "Secure request without hostname not allowed." The request never reaches an upstream or automatic certificate issuance. Static TLS uses its configured certificate to finish the handshake; automatic TLS uses a temporary in-memory self-signed certificate for this response. Clients that enforce certificate trust may reject the handshake before seeing the HTTP page. Normal hostname requests keep their existing certificate selection.
 
 The notice lasts up to three seconds, shortened for tight shutdown deadlines. Existing requests drain before proxy pools and background workers stop. The systemd stop deadline is 35 seconds. Abrupt termination or closed listeners cannot serve the page, although an already displayed page continues retrying. Backend failures retain their original responses.
 
@@ -375,7 +400,7 @@ The installer runs this migration too. Migration copies legacy values into the p
 
 `IP_FILTER_*`, `DOS_DETECTOR_*` and `CVE_MITIGATOR_*` names remain supported. Country names remain English names such as `Azerbaijan,Turkey`. `PF_CLOUDFLARE_HOSTS_FILE` selects the legacy JSON source during migration; normal YAML startup uses `rules` instead.
 
-Keep deployment files private. `proxy-firewall.override.yaml`, credentials, keys, certificates and runtime data are excluded from source control; the private override is also excluded from Docker builds.
+Keep deployment files private. `proxy-firewall.override.yaml`, credentials, keys, certificates and runtime data are excluded from source control; the private override and `.certbot.blacklist` are also excluded from Docker builds. Installation preserves an existing certificate blacklist.
 
 ## Behavior and resource reference
 
@@ -398,7 +423,9 @@ The inspection-buffer budget bounds retained payload capacity, not process RSS. 
 
 Memory caches are bounded and expiring. Redis is optional, uses one client with bounded queues/workers, and falls back to local state when unavailable. Country cache keys expire individually. MaxMind validates database replacements before swapping readers; failed Googlebot updates retain the last good ranges and retry with backoff.
 
-Empty GET and HEAD requests may retry once on connection closure, reset or a broken pipe before a response is forwarded. Other methods, timeouts, TLS failures and HTTP error responses are not automatically retried; streamed response failures cannot retry after forwarding starts. Ordinary upstream responses use a 32 KiB header buffer. Set `PF_UPSTREAM_IDLE_TIMEOUT` below the backend's keepalive timeout to reduce stale connection reuse; for example, use `15s` when the backend closes idle connections after `30s`.
+Empty GET and HEAD requests may retry on connection closure, reset or a broken pipe before a response is forwarded. `PF_UPSTREAM_REQUEST_RETRY_TIMES` defaults to `3` additional attempts and can be changed live in **Rules → General settings**; `0` disables retries. A failed connection is discarded and other idle connections are cleared before retrying, so the next attempt can open a fresh connection within the existing pool limits. Other methods, timeouts, TLS failures and HTTP error responses are not automatically retried; streamed response failures cannot retry after forwarding starts. Ordinary upstream responses use a 32 KiB header buffer. Set `PF_UPSTREAM_IDLE_TIMEOUT` below the backend's keepalive timeout to reduce stale connection reuse; for example, use `15s` when the backend closes idle connections after `30s`.
+
+HTTP/1 and HTTP/2 connection warnings use the same structured logger with `time`, `level`, `msg`, `client_ip` and `error`, plus `hostname` when known. HTTP/2 preface/protocol failures retain peer addresses and SNI context while sharing connection-warning sampling; the process-wide standard logger is unchanged.
 
 For measured results and their limits, see [BENCHMARKS.md](BENCHMARKS.md). The reproducible Docker harness is documented in [bench/README.md](bench/README.md).
 

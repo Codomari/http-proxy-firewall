@@ -27,6 +27,15 @@ func (e *Engine) ResolveClientIP(c fiber.Ctx) string {
 	return e.clientAddress(c).String()
 }
 
+// ClientCountry shares the verified forwarding-header policy used by firewall
+// decisions. Missing geolocation data leaves callers free to use a default.
+func (e *Engine) ClientCountry(c fiber.Ctx) string {
+	if e.intelligence == nil {
+		return ""
+	}
+	return e.intelligence.Country(c.Context(), e.clientAddress(c))
+}
+
 // Resolve once so changing a hostname setting during a request cannot make
 // debug filtering, firewall decisions and upstream forwarding disagree.
 func (e *Engine) clientAddress(c fiber.Ctx) netip.Addr {

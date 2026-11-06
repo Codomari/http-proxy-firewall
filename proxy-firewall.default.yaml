@@ -75,6 +75,9 @@ env:
     value: "256"
   - key: PF_UPSTREAM_MAX_CONNECTIONS
     value: "256"
+  # Additional retries for empty GET/HEAD requests after a closed connection; 0 disables.
+  - key: PF_UPSTREAM_REQUEST_RETRY_TIMES
+    value: "3"
   - key: PF_READ_TIMEOUT
     value: "10m"
   - key: PF_WRITE_TIMEOUT

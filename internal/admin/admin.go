@@ -51,19 +51,23 @@ type credentialHashes struct {
 }
 
 type Handler struct {
-	basePath    string
-	enabled     bool
-	accounts    []credentialHashes
-	registry    *monitoring.Registry
-	penalties   PenaltySource
-	services    ServiceSources
-	assets      map[string][]byte
-	logs        logTail
-	debug       debugLog
-	cloudflare  cloudflareSource
-	general     generalRulesSource
-	generalFile config.GeneralRulesFile
-	generalMu   sync.Mutex
+	basePath      string
+	enabled       bool
+	accounts      []credentialHashes
+	registry      *monitoring.Registry
+	penalties     PenaltySource
+	services      ServiceSources
+	assets        map[string][]byte
+	logs          logTail
+	debug         debugLog
+	cloudflare    cloudflareSource
+	general       generalRulesSource
+	upstream      upstreamSettingsSource
+	generalFile   config.GeneralRulesFile
+	generalMu     sync.Mutex
+	certBlacklist CertificateBlacklist
+	certificates  CertificateService
+	testPages     []TestPage
 }
 
 func New(cfg config.Config, registry *monitoring.Registry, penalties PenaltySource, logger *slog.Logger, services ...ServiceSources) (*Handler, error) {
@@ -196,6 +200,9 @@ func (h *Handler) serve(c fiber.Ctx, requestPath string) error {
 		c.Set("WWW-Authenticate", `Basic realm="Proxy firewall admin", charset="UTF-8"`)
 		return c.Status(fiber.StatusUnauthorized).SendString("Authentication required")
 	}
+	if requestPath == h.basePath+"/api/test-pages" || requestPath == h.basePath+"/test/pages" || strings.HasPrefix(requestPath, h.basePath+"/test/pages/") {
+		return h.serveTestPage(c, requestPath)
+	}
 	if requestPath == h.basePath+"/api/debug" {
 		return h.serveDebug(c)
 	}
@@ -204,6 +211,12 @@ func (h *Handler) serve(c fiber.Ctx, requestPath string) error {
 	}
 	if requestPath == h.basePath+"/api/general-rules" {
 		return h.serveGeneralRules(c)
+	}
+	if requestPath == h.basePath+"/api/certbot-blacklist" {
+		return h.serveCertificateBlacklist(c)
+	}
+	if requestPath == h.basePath+"/api/certificates" {
+		return h.serveCertificates(c)
 	}
 	if c.Method() != fiber.MethodGet && c.Method() != fiber.MethodHead {
 		c.Set("Allow", "GET, HEAD")

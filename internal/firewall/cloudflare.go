@@ -132,6 +132,13 @@ func (e *Engine) CloudflareHosts() []CloudflareHost {
 	return result
 }
 
+// BehindCloudflare uses the same exact/www/wildcard precedence as client-IP
+// handling, and observes admin changes immediately.
+func (e *Engine) BehindCloudflare(host string) bool {
+	enabled, _ := e.cloudflare.match(host)
+	return enabled
+}
+
 func (s *cloudflareSettings) loadYAML(store *config.YAMLStore) error {
 	document, err := store.Read()
 	if err != nil {

@@ -13,6 +13,8 @@ files
 .certs
 bin
 log
+.certbot.blacklist
+.certbot.blacklist-*
 *.log
 *.pem
 *.key

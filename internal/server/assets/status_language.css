@@ -1,0 +1,4 @@
+[hidden]{display:none!important}
+.language-picker{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin:0 0 24px;font-size:13px;grid-column:1/-1}
+.language-picker select{max-width:100%;font:inherit;color:inherit;background:transparent;border:1px solid #718096;border-radius:8px;padding:7px 10px;cursor:pointer}
+.language-picker select:focus-visible{outline:2px solid #70d9b3;outline-offset:3px}

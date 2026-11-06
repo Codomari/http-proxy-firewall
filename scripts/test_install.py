@@ -89,6 +89,7 @@ class InstallTests(unittest.TestCase):
 
     def test_reinstall_preserves_everything_except_binary(self):
         self.install()
+        (self.root / ".certbot.blacklist").write_text("blocked.example|expires:2099-01-01T00:00:00Z\n")
         for directory in ("bin", "log", "files", ".cache", ".certs"):
             folder = self.root / directory
             folder.chmod(0o751)

@@ -1,23 +1,33 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{LANG}}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title>540 · Server restarting</title>
+  <title>{{RESTART_TITLE}}</title>
   <style>{{STYLE}}</style>
+  <style>{{LANGUAGE_STYLE}}</style>
 </head>
-<body>
-  <main class="restart-card" aria-labelledby="restart-title">
-    <p class="eyebrow">HTTP 540</p>
-    <div class="restart-symbol" aria-hidden="true">↻</div>
-    <h1 id="restart-title">Server restarting</h1>
-    <p class="message">We’ll reconnect you automatically when the server is ready.</p>
-    <div class="countdown" aria-hidden="true"><span id="countdown">3</span><span class="seconds">seconds</span></div>
-    <p id="restart-status" class="detail" role="status">Retrying in 3 seconds…</p>
-    <a id="retry-now" href="">Try again now</a>
-    <noscript><p class="detail">Enable JavaScript for automatic retry, or use the link above.</p></noscript>
+<body id="status-page" data-page="restart" data-translations="{{TRANSLATIONS}}">
+  <main id="restart-card" class="restart-card" aria-labelledby="restart-title">
+    <div id="status-language-picker" class="language-picker" hidden><label for="status-language" data-i18n="language_label">{{LANGUAGE_LABEL}}</label><select id="status-language">{{LANGUAGE_OPTIONS}}</select></div>
+    <section class="restart-notice" aria-labelledby="restart-title">
+      <h1 id="restart-title" data-i18n="restart_title">{{RESTART_TITLE}}</h1>
+      <p class="reassurance" data-i18n="reassurance">{{REASSURANCE}}</p>
+      <div class="request-animation" aria-hidden="true"><span></span><span></span><span></span></div>
+      <p id="restart-status" class="detail" role="status">{{RECONNECTING}}</p>
+      <button id="restart-continue" type="button" data-i18n="continue" hidden>{{CONTINUE}}</button>
+      <noscript><p class="detail"><span data-i18n="noscript">{{NOSCRIPT}}</span> <a href="" data-i18n="reload">{{RELOAD}}</a></p></noscript>
+    </section>
+    <section id="restart-game" class="game" aria-labelledby="game-title" hidden>
+      <h2 id="game-title" data-i18n="game_title">{{GAME_TITLE}}</h2>
+      <p id="game-rules" class="detail" data-i18n="game_rules">{{GAME_RULES}}</p>
+      <p id="game-status" class="detail" role="status">{{YOUR_TURN}}</p>
+      <div id="game-board" class="game-board" role="group" aria-labelledby="game-title" aria-describedby="game-rules"></div>
+      <div class="game-actions"><button id="game-restart" type="button" data-i18n="restart_game">{{RESTART_GAME}}</button><button id="game-again" type="button" data-i18n="play_again" hidden>{{PLAY_AGAIN}}</button></div>
+    </section>
   </main>
+  <script>{{LANGUAGE_SCRIPT}}</script>
   <script>{{SCRIPT}}</script>
 </body>
 </html>

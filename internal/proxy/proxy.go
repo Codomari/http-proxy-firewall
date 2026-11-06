@@ -22,18 +22,19 @@ import (
 )
 
 type Handler struct {
-	client    *fasthttp.HostClient
-	target    *url.URL
-	redirect  string
-	logger    *slog.Logger
-	timeout   time.Duration
-	slots     chan struct{}
-	mu        sync.Mutex
-	tunnels   map[net.Conn]struct{}
-	closed    atomic.Bool
-	lastError time.Time
-	routes    map[string]*Handler
-	handoffs  *upgradeHandoffs
+	client     *fasthttp.HostClient
+	target     *url.URL
+	redirect   string
+	logger     *slog.Logger
+	timeout    time.Duration
+	slots      chan struct{}
+	mu         sync.Mutex
+	tunnels    map[net.Conn]struct{}
+	closed     atomic.Bool
+	retryTimes atomic.Int64
+	lastError  time.Time
+	routes     map[string]*Handler
+	handoffs   *upgradeHandoffs
 }
 
 func New(cfg config.Config, logger *slog.Logger) (*Handler, error) {
@@ -48,10 +49,14 @@ func New(cfg config.Config, logger *slog.Logger) (*Handler, error) {
 	if cfg.Proxy.MaxConnections < 1 {
 		return nil, errors.New("proxy max connections must be positive")
 	}
+	if cfg.Proxy.RequestRetryTimes < 0 {
+		return nil, errors.New("proxy request retry times cannot be negative")
+	}
 	if logger == nil {
 		logger = slog.Default()
 	}
 	h := &Handler{target: target, redirect: cfg.Proxy.IPv4Redirect, logger: logger, timeout: cfg.Proxy.WriteTimeout, slots: make(chan struct{}, cfg.Proxy.MaxConnections), tunnels: make(map[net.Conn]struct{}), handoffs: &upgradeHandoffs{}}
+	h.retryTimes.Store(int64(cfg.Proxy.RequestRetryTimes))
 	address = target.Host
 	if target.Port() == "" {
 		port := "80"
@@ -64,8 +69,9 @@ func New(cfg config.Config, logger *slog.Logger) (*Handler, error) {
 		Addr: address, IsTLS: target.Scheme == "https", TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12, ServerName: target.Hostname()},
 		MaxConns: cfg.Proxy.MaxConnections, MaxIdleConnDuration: cfg.Proxy.IdleTimeout,
 		ReadTimeout: cfg.Proxy.ReadTimeout, WriteTimeout: cfg.Proxy.WriteTimeout,
-		MaxIdemponentCallAttempts: 2, RetryIfErr: retryUpstreamRequest,
-		ReadBufferSize: 32 << 10, DisablePathNormalizing: true,
+		// Retry in doRequest so live updates never mutate HostClient configuration.
+		MaxIdemponentCallAttempts: 1,
+		ReadBufferSize:            32 << 10, DisablePathNormalizing: true,
 		StreamResponseBody: true, NoDefaultUserAgentHeader: true, SecureErrorLogMessage: true,
 	}
 	if err := h.configureRoutes(cfg, logger); err != nil {
@@ -138,7 +144,7 @@ func (h *Handler) Handle(c fiber.Ctx) error {
 		return h.upgrade(c, request, upgradeProtocol, release)
 	}
 	response := fasthttp.AcquireResponse()
-	if err := h.client.Do(request, response); err != nil {
+	if err := h.doRequest(request, response); err != nil {
 		fasthttp.ReleaseResponse(response)
 		return h.fail(c, err)
 	}

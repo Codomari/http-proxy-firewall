@@ -23,7 +23,7 @@ import (
 )
 
 func testConfig(upstream string) config.Config {
-	return config.Config{Proxy: config.Proxy{Upstream: upstream, MaxConnections: 2, ReadTimeout: 2 * time.Second, WriteTimeout: 2 * time.Second, IdleTimeout: time.Minute}}
+	return config.Config{Proxy: config.Proxy{Upstream: upstream, MaxConnections: 2, RequestRetryTimes: 1, ReadTimeout: 2 * time.Second, WriteTimeout: 2 * time.Second, IdleTimeout: time.Minute}}
 }
 
 func frontend(t *testing.T, cfg config.Config) (string, *Handler) {

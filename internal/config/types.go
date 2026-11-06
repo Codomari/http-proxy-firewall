@@ -27,13 +27,14 @@ type HTTP struct {
 }
 
 type Proxy struct {
-	Upstream       string
-	Routes         map[string]string
-	MaxConnections int
-	ReadTimeout    time.Duration
-	WriteTimeout   time.Duration
-	IdleTimeout    time.Duration
-	IPv4Redirect   string
+	Upstream          string
+	Routes            map[string]string
+	MaxConnections    int
+	RequestRetryTimes int
+	ReadTimeout       time.Duration
+	WriteTimeout      time.Duration
+	IdleTimeout       time.Duration
+	IPv4Redirect      string
 }
 
 type TLS struct {

@@ -1,17 +1,27 @@
 :root{color-scheme:dark;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#edf2f7;background:#0d1117;font-synthesis:none}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 body{margin:0;min-height:100vh;min-height:100dvh;display:grid;place-items:center;padding:24px;background:radial-gradient(ellipse at top,#183332 0,transparent 65%)}
 .restart-card{width:min(100%,480px);padding:40px 32px;text-align:center;background:#151b24;border:1px solid #283241;border-radius:20px;box-shadow:0 24px 80px #0003}
-.eyebrow{margin:0 0 20px;color:#91a0b4;font-size:12px;font-weight:650;letter-spacing:.18em}
-.restart-symbol{width:56px;height:56px;display:grid;place-items:center;margin:0 auto 20px;color:#70d9b3;background:#203c35;border-radius:50%;font-size:38px;line-height:1;animation:turn 3s linear infinite}
+.restart-card.with-game{width:min(100%,1080px)}
 h1{margin:0;font-size:30px;font-weight:650;letter-spacing:-.035em}
-.message{max-width:330px;margin:16px auto 24px;color:#b1bed0;font-size:15px;line-height:1.6}
-.countdown{display:flex;justify-content:center;align-items:baseline;gap:9px;color:#70d9b3}
-#countdown{font-size:64px;font-weight:650;font-variant-numeric:tabular-nums;line-height:1.2}
-.seconds{font-size:14px;color:#91a0b4}
-.detail{margin:14px 0 24px;min-height:21px;color:#91a0b4;font-size:13px;line-height:1.6}
+.reassurance{white-space:pre-line;line-height:1.6;margin:18px 0 0;color:#d5dfe9}
+.game{margin-top:28px;padding-top:22px;border-top:1px solid #283241}
+.game h2{font-size:17px;margin:0 0 8px}
+.game-board{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:clamp(2px,.4vw,5px);width:min(100%,max(240px,calc(100svh - 260px)),640px);margin:16px auto}
+.game-actions{display:flex;justify-content:center;flex-wrap:wrap;gap:8px}
+button{font:inherit;cursor:pointer;color:#edf2f7;background:#1b2532;border:1px solid #364658;border-radius:9px;padding:10px 18px;font-size:13px;font-weight:600}
+button:hover:enabled{background:#273448;border-color:#70d9b3}button:focus-visible{outline:2px solid #70d9b3;outline-offset:4px}
+.game-board button{aspect-ratio:1;min-width:0;padding:0;font-size:clamp(12px,2.5vmin,28px);border-radius:4px;color:#70d9b3}
+.game-board button:disabled{cursor:default;opacity:1}
+#restart-continue{margin-top:16px}
+.request-animation{display:flex;justify-content:center;gap:10px;margin:30px 0 24px}
+.request-animation span{width:10px;height:10px;border-radius:50%;background:#70d9b3;animation:request-pulse 1.2s ease-in-out infinite}
+.request-animation span:nth-child(2){animation-delay:.15s}.request-animation span:nth-child(3){animation-delay:.3s}
+.detail{margin:0;min-height:21px;color:#91a0b4;font-size:13px;line-height:1.6}
 a{display:inline-block;padding:10px 18px;color:#edf2f7;background:#1b2532;border:1px solid #364658;border-radius:9px;font-size:13px;font-weight:600;text-decoration:none}
 a:hover{background:#273448;border-color:#70d9b3}a:focus-visible{outline:2px solid #70d9b3;outline-offset:4px}
-@keyframes turn{to{transform:rotate(360deg)}}
-@media(prefers-reduced-motion:reduce){.restart-symbol{animation:none}}
-@media(max-width:420px){.restart-card{padding:32px 20px}h1{font-size:27px}}
+@keyframes request-pulse{0%,70%,100%{opacity:.3;transform:translateY(0)}35%{opacity:1;transform:translateY(-6px)}}
+@media(prefers-reduced-motion:reduce){.request-animation span{animation:none}}
+@media(min-width:800px){.restart-card.with-game{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:0 28px}.game{margin:0;padding:0 0 0 28px;border-top:0;border-left:1px solid #283241}}
+@media(max-width:420px){body{padding:12px}.restart-card{padding:24px 14px}h1{font-size:27px}}

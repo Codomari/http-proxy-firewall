@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"http-proxy-firewall/internal/admin"
+	"http-proxy-firewall/internal/cache"
 	"http-proxy-firewall/internal/config"
 	"http-proxy-firewall/internal/firewall"
 	"http-proxy-firewall/internal/monitoring"
@@ -27,23 +28,32 @@ import (
 )
 
 type Server struct {
-	cfg         config.Config
-	app         *fiber.App
-	logger      *slog.Logger
-	manager     *autocert.Manager
-	admin       *http.Server
-	adminUI     *admin.Handler
-	stats       *monitoring.Registry
-	mu          sync.Mutex
-	listeners   []net.Listener
-	httpAddress net.Addr
-	tlsAddress  net.Addr
-	started     bool
-	stopping    bool
-	restarting  atomic.Bool
-	hostnames   sync.Map
-	errors      chan error
-	wg          sync.WaitGroup
+	cfg           config.Config
+	app           *fiber.App
+	logger        *slog.Logger
+	manager       *autocert.Manager
+	certGuard     *certificateGuard
+	certMu        sync.Mutex
+	certRequests  map[string]admin.CertificateRequest
+	certIssue     func(string) error
+	usableCerts   *cache.Cache[string, bool]
+	h2Base        *http.Server
+	h2Conns       map[net.Conn]struct{}
+	h2Stopping    bool
+	admin         *http.Server
+	adminUI       *admin.Handler
+	stats         *monitoring.Registry
+	statusCountry func(fiber.Ctx) string
+	mu            sync.Mutex
+	listeners     []net.Listener
+	httpAddress   net.Addr
+	tlsAddress    net.Addr
+	started       bool
+	stopping      bool
+	restarting    atomic.Bool
+	hostnames     sync.Map
+	errors        chan error
+	wg            sync.WaitGroup
 }
 
 func New(cfg config.Config, engine *firewall.Engine, upstream *proxy.Handler, logger *slog.Logger, stats *monitoring.Registry, adminHandler *admin.Handler) (*Server, error) {
@@ -71,11 +81,26 @@ func New(cfg config.Config, engine *firewall.Engine, upstream *proxy.Handler, lo
 			return nil, err
 		}
 	}
-	s := &Server{cfg: cfg, logger: logger, errors: make(chan error, 3), stats: stats, adminUI: adminHandler}
+	s := &Server{cfg: cfg, logger: logger, errors: make(chan error, 3), stats: stats, adminUI: adminHandler, statusCountry: engine.ClientCountry}
+	basePath, err := config.AdminPath(cfg.Admin.URI)
+	if err != nil {
+		return nil, err
+	}
+	s.certGuard, err = newCertificateGuard(basePath+"/dns/test", certificateBlacklistFile, logger)
+	if err != nil {
+		return nil, err
+	}
+	s.adminUI.SetCertificateBlacklist(s.certGuard)
+	s.adminUI.SetUpstreamSettings(upstream)
+	s.adminUI.SetTestPages(s.statusTestPages())
+	s.certGuard.behindCloudflare = engine.BehindCloudflare
+	s.certGuard.country = engine.ClientCountry
+	s.certRequests = make(map[string]admin.CertificateRequest)
+	s.usableCerts = cache.New[string, bool](certificateHostLimit)
+	s.adminUI.SetCertificateService(s)
 	s.app = newFiberApp(cfg)
 	s.configureRoutes(engine, upstream)
 	s.configureHTTPServer(upstream)
-	var err error
 	s.admin, err = newAdminServer(cfg.Observability.PprofAddress)
 	if err != nil {
 		return nil, err
@@ -271,7 +296,7 @@ func (s *Server) tlsConfiguration() (*tls.Config, error) {
 	if s.cfg.TLS.AllowLegacyClients {
 		minimum = tls.VersionTLS10
 	}
-	result := &tls.Config{MinVersion: minimum, NextProtos: []string{"http/1.1"}}
+	result := &tls.Config{MinVersion: minimum, NextProtos: []string{"h2", "http/1.1"}}
 	result.GetConfigForClient = func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
 		s.rememberHostname(hello.Conn.LocalAddr(), hello.Conn.RemoteAddr(), hello.ServerName)
 		return nil, nil
@@ -283,7 +308,13 @@ func (s *Server) tlsConfiguration() (*tls.Config, error) {
 		}
 		result.Certificates = []tls.Certificate{pair}
 	} else {
-		result.GetCertificate = s.manager.GetCertificate
+		fallback := new(hostnameRequiredCertificate)
+		result.GetCertificate = func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+			if hello.ServerName == "" {
+				return fallback.get()
+			}
+			return s.manager.GetCertificate(hello)
+		}
 		result.NextProtos = append(result.NextProtos, acme.ALPNProto)
 	}
 	return result, nil
@@ -323,6 +354,9 @@ func (s *Server) Stop(ctx context.Context) error {
 	}
 	s.restarting.Store(true)
 	waitForRestartNotice(ctx)
+	s.mu.Lock()
+	s.h2Stopping = true
+	s.mu.Unlock()
 	// Closing bound listeners also handles Stop racing before a Serve goroutine
 	// has registered its listener with the underlying HTTP server.
 	for _, listener := range listeners {
@@ -332,11 +366,22 @@ func (s *Server) Stop(ctx context.Context) error {
 	var drain sync.WaitGroup
 	drain.Add(1)
 	go func() { defer drain.Done(); drainErr = s.app.ShutdownWithContext(ctx) }()
+	if s.h2Base != nil {
+		drain.Add(1)
+		go func() { defer drain.Done(); _ = s.h2Base.Shutdown(ctx) }()
+	}
 	if s.admin != nil {
 		drain.Add(1)
 		go func() { defer drain.Done(); adminErr = s.admin.Shutdown(ctx) }()
 	}
 	drain.Wait()
+	if ctx.Err() != nil {
+		s.mu.Lock()
+		for conn := range s.h2Conns {
+			_ = conn.Close()
+		}
+		s.mu.Unlock()
+	}
 	done := make(chan struct{})
 	go func() { s.wg.Wait(); close(done) }()
 	select {

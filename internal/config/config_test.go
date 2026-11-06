@@ -28,6 +28,8 @@ func TestRejectInvalidConfiguration(t *testing.T) {
 		"upstream credentials": {"PF_PROXY_TO": "http://user:secret@localhost:8080"},
 		"upstream path":        {"PF_PROXY_TO": "http://localhost:8080/path"},
 		"body overflow":        {"CVE_MITIGATOR_MAX_BODY_BYTES": "9223372036854775807"},
+		"negative retries":     {"PF_UPSTREAM_REQUEST_RETRY_TIMES": "-1"},
+		"fractional retries":   {"PF_UPSTREAM_REQUEST_RETRY_TIMES": "1.5"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := Parse(nil, values, io.Discard); err == nil {
@@ -163,5 +165,25 @@ func TestLoadReadsRelativeCredentialsOnceAtStartup(t *testing.T) {
 	next, err := Load(nil, io.Discard)
 	if err != nil || len(next.Admin.Accounts) != 1 || next.Admin.Accounts[0].Password != "second-password" {
 		t.Fatal("next startup did not read updated credentials")
+	}
+}
+
+func TestUpstreamRequestRetryCount(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		want  int
+	}{{"", 3}, {"0", 0}, {"5", 5}} {
+		env := map[string]string{}
+		if tc.value != "" {
+			env["PF_UPSTREAM_REQUEST_RETRY_TIMES"] = tc.value
+		}
+		cfg, err := Parse(nil, env, io.Discard)
+		if err != nil || cfg.Proxy.RequestRetryTimes != tc.want {
+			t.Fatalf("retry count=%d want=%d err=%v", cfg.Proxy.RequestRetryTimes, tc.want, err)
+		}
+	}
+	cfg, err := Parse([]string{"--upstream-request-retry-times=0"}, map[string]string{"PF_UPSTREAM_REQUEST_RETRY_TIMES": "5"}, io.Discard)
+	if err != nil || cfg.Proxy.RequestRetryTimes != 0 {
+		t.Fatal("retry flag did not override environment")
 	}
 }

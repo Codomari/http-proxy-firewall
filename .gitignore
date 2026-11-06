@@ -24,6 +24,8 @@ secrets.*
 /.certs/
 /bin/
 /log/
+.certbot.blacklist
+.certbot.blacklist-*
 /coverage.out
 *.log
 __debug_bin*

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -17,6 +18,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/fasthttpadaptor"
+	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
 )
 
@@ -50,6 +52,13 @@ func (s *Server) configureRoutes(engine *firewall.Engine, upstream *proxy.Handle
 		}
 		return c.Next()
 	})
+	s.app.Use(s.certGuard.rejectBlacklisted)
+	s.app.Use(func(c fiber.Ctx) error {
+		if c.Path() == s.certGuard.path {
+			return s.certGuard.serve(c)
+		}
+		return c.Next()
+	})
 	if s.cfg.TLS.Enabled && s.cfg.TLS.CertificateFile == "" {
 		s.configureACME()
 	}
@@ -67,7 +76,21 @@ func (s *Server) configureRoutes(engine *firewall.Engine, upstream *proxy.Handle
 }
 
 func (s *Server) configureACME() {
-	s.manager = &autocert.Manager{Prompt: autocert.AcceptTOS, Email: s.cfg.TLS.Email, Cache: autocert.DirCache(s.cfg.TLS.CacheDir), HostPolicy: hostPolicy(s.cfg.TLS.Hosts)}
+	allowed := hostPolicy(s.cfg.TLS.Hosts)
+	s.manager = &autocert.Manager{Prompt: autocert.AcceptTOS, Email: s.cfg.TLS.Email, Cache: autocert.DirCache(s.cfg.TLS.CacheDir), HostPolicy: func(ctx context.Context, host string) error {
+		if err := allowed(ctx, host); err != nil {
+			return err
+		}
+		if s.hasUsableCachedCertificate(ctx, host) {
+			// This gate protects issuance/renewal. Serving an already valid
+			// cached certificate must not depend on HTTP/DNS probe availability.
+			return nil
+		}
+		return s.certGuard.check(ctx, host)
+	}}
+	// Renewal does not invoke autocert's HostPolicy. Guard signed order payloads
+	// as well so a later Cloudflare rule change also prevents renewal requests.
+	s.manager.Client = &acme.Client{HTTPClient: &http.Client{Transport: &certificateACMETransport{guard: s.certGuard, next: http.DefaultTransport}}}
 	challenge := fasthttpadaptor.NewFastHTTPHandler(s.manager.HTTPHandler(http.NotFoundHandler()))
 	s.app.Use(func(c fiber.Ctx) error {
 		if strings.HasPrefix(string(c.Request().Header.RequestURI()), "/.well-known/acme-challenge/") {
@@ -112,8 +135,18 @@ func (s *Server) configureHTTPServer(upstream *proxy.Handler) {
 	}
 	fast.Handler = func(ctx *fasthttp.RequestCtx) {
 		s.rememberHostname(ctx.LocalAddr(), ctx.RemoteAddr(), string(ctx.Request.Header.Host()))
+		if state := ctx.TLSConnectionState(); state != nil && state.ServerName == "" {
+			c := s.app.AcquireCtx(ctx)
+			country := s.statusCountry(c)
+			s.app.ReleaseCtx(c)
+			serveTLSHostnameRequired(ctx, country)
+			return
+		}
 		if s.restarting.Load() {
-			serveRestarting(ctx)
+			c := s.app.AcquireCtx(ctx)
+			country := s.statusCountry(c)
+			s.app.ReleaseCtx(c)
+			serveRestarting(ctx, country)
 			return
 		}
 		method := string(ctx.Request.Header.Method())
@@ -141,6 +174,7 @@ func (s *Server) configureHTTPServer(upstream *proxy.Handler) {
 	}
 	fast.Logger = &safeLogger{logger: s.logger, hostname: s.connectionHostname}
 	fast.SecureErrorLogMessage = true
+	s.configureHTTP2(fast)
 }
 
 func newAdminServer(address string) (*http.Server, error) {

@@ -29,7 +29,7 @@ func TestRestartScreenIsEmbeddedAndOnlyUsedDuringFirewallShutdown(t *testing.T) 
 	if err := s.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	transport := &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}}
+	transport := &http.Transport{TLSClientConfig: &tls.Config{ServerName: "localhost", RootCAs: roots, MinVersion: tls.VersionTLS12}}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Timeout: time.Second, Transport: transport}
 	address := "http://" + s.HTTPAddress().String()
@@ -63,7 +63,7 @@ func TestRestartScreenIsEmbeddedAndOnlyUsedDuringFirewallShutdown(t *testing.T) 
 			}
 			body, _ = io.ReadAll(response.Body)
 			response.Body.Close()
-			if response.StatusCode != 540 || response.Status != "540 Server Restarting" || response.Header.Get("Retry-After") != "3" || response.Header.Get("Cache-Control") != "no-store" || !response.Close {
+			if response.StatusCode != 540 || response.Status != "540 Server Restarting" || response.Header.Get("Retry-After") != "" || response.Header.Get("Cache-Control") != "no-store" || !response.Close {
 				t.Fatalf("restart response: %s %v", response.Status, response.Header)
 			}
 			if method == "HEAD" {
@@ -72,12 +72,12 @@ func TestRestartScreenIsEmbeddedAndOnlyUsedDuringFirewallShutdown(t *testing.T) 
 				}
 				continue
 			}
-			for _, want := range []string{"Server restarting", restartingJS, restartingCSS} {
+			for _, want := range []string{"Server restarting", "request-animation", restartingJS, restartingCSS} {
 				if !strings.Contains(string(body), want) {
 					t.Fatal("embedded restart page missing content")
 				}
 			}
-			for _, excluded := range []string{"{{STYLE}}", "{{SCRIPT}}", "must-not-be-reflected", "<script src=", "<link "} {
+			for _, excluded := range []string{"{{STYLE}}", "{{SCRIPT}}", "must-not-be-reflected", "<script src=", "<link ", "countdown", "Retrying in 3"} {
 				if strings.Contains(string(body), excluded) {
 					t.Fatalf("page contains external resource or unexpanded text: %s", excluded)
 				}

@@ -13,12 +13,40 @@ import (
 
 func retryUpstreamRequest(request *fasthttp.Request, _ int, err error) (bool, bool) {
 	// Only replay empty GET/HEAD requests, before a response has been forwarded.
-	// fasthttp closes the failed connection before invoking this callback, and
-	// passes raw io.EOF here before converting it to ErrConnectionClosed.
+	// fasthttp closes a failed connection before returning its error.
 	safe := (request.Header.IsGet() || request.Header.IsHead()) && len(request.Body()) == 0
 	transient := errors.Is(err, io.EOF) || errors.Is(err, fasthttp.ErrConnectionClosed) ||
 		errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE)
 	return false, safe && transient
+}
+
+// SetRequestRetryTimes applies to new requests on every upstream route. Requests
+// already in progress retain their original retry budget.
+func (h *Handler) SetRequestRetryTimes(times int) {
+	if times < 0 {
+		return
+	}
+	h.retryTimes.Store(int64(times))
+	for _, route := range h.routes {
+		route.SetRequestRetryTimes(times)
+	}
+}
+
+func (h *Handler) doRequest(request *fasthttp.Request, response *fasthttp.Response) error {
+	retries := h.retryTimes.Load()
+	for attempt := int64(0); ; attempt++ {
+		err := h.client.Do(request, response)
+		_, retry := retryUpstreamRequest(request, 0, err)
+		if err == nil || !retry || attempt >= retries || h.closed.Load() {
+			return err
+		}
+		// fasthttp already discarded the failed connection. Drop the remaining
+		// idle sockets too, so the retry cannot consume another stale socket
+		// from the same pool. Active requests keep their connections and the
+		// existing MaxConns/admission limits still govern any replacement dial.
+		h.client.CloseIdleConnections()
+		response.Reset()
+	}
 }
 
 // Use fixed reasons rather than raw errors: parser errors and custom dialers
