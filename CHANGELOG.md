@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.15
+
+Three user-facing changes since 0.3.12, following the project's patch-count convention.
+
+### Fixed
+
+- Retry empty GET/HEAD requests once on selected connection failures to recover from stale upstream connections without replaying form submissions or retrying timeouts, TLS failures or HTTP error responses.
+- Increase the ordinary upstream response-header buffer to 32 KiB so larger cookie/header sets can be forwarded.
+
+### Changed
+
+- Include HTTP status, upstream address, request method and a fixed error reason in sampled upstream failure warnings while preserving verified client IPs, optional hostnames and private-data protection.
+
 ## 0.3.12
 
 ### Changed

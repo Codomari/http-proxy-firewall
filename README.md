@@ -1,6 +1,6 @@
 # http-proxy-firewall
 
-Version **0.3.12** · [Changelog](CHANGELOG.md) · [MIT license](LICENSE)
+Version **0.3.15** · [Changelog](CHANGELOG.md) · [MIT license](LICENSE)
 
 A reverse proxy and Layer 7 firewall that sits in front of your web applications. It checks requests before forwarding them, adds a cookie checkpoint during traffic spikes, and provides an embedded admin dashboard.
 
@@ -392,11 +392,13 @@ Keep deployment files private. `proxy-firewall.override.yaml`, credentials, keys
 | Profiling | `127.0.0.1:8068` by default; `PF_PPROF_ADDRESS=""` disables it. Non-loopback profiling addresses are rejected. |
 | Server header | `codomari/proxy-firewall/<version>` replaces upstream Server values. `VERSION` is embedded at build time. |
 
-Rejection logs contain the verified client IP, optional canonical hostname and suppressed-message count. Malformed-form excerpts are escaped and capped at 30 serialized characters. Upstream failures use the verified client IP; HTTP connection warnings use the socket peer and a hostname when known. Failures before headers are parsed cannot identify the client behind a proxy. Listener-wide failures use `client_ip=unknown`.
+Rejection logs contain the verified client IP, optional canonical hostname and suppressed-message count. Malformed-form excerpts are escaped and capped at 30 serialized characters. Upstream failure warnings include the verified client IP, optional hostname, HTTP status, upstream address, request method, error type and a fixed `error_reason`, sampled at most once per second per upstream handler. Reasons distinguish closed/reset/refused connections, broken pipes, pool exhaustion, timeouts, DNS failures, certificate/TLS errors and oversized response headers without logging raw error text or request/response content. HTTP connection warnings use the socket peer and a hostname when known. Failures before headers are parsed cannot identify the client behind a proxy. Listener-wide failures use `client_ip=unknown`.
 
 The inspection-buffer budget bounds retained payload capacity, not process RSS. TLS, headers, framework buffers and allocations awaiting garbage collection use additional memory. Known-length bodies reserve their length plus one overflow-probe byte; unknown-length bodies reserve the per-body maximum plus one. Reservations last through the middleware chain.
 
-Memory caches are bounded and expiring. Redis is optional, uses one client with bounded queues/workers, and falls back to local state when unavailable. Country cache keys expire individually. MaxMind validates database replacements before swapping readers; failed Googlebot updates retain the last good ranges and retry with backoff. Upstream requests are not automatically retried.
+Memory caches are bounded and expiring. Redis is optional, uses one client with bounded queues/workers, and falls back to local state when unavailable. Country cache keys expire individually. MaxMind validates database replacements before swapping readers; failed Googlebot updates retain the last good ranges and retry with backoff.
+
+Empty GET and HEAD requests may retry once on connection closure, reset or a broken pipe before a response is forwarded. Other methods, timeouts, TLS failures and HTTP error responses are not automatically retried; streamed response failures cannot retry after forwarding starts. Ordinary upstream responses use a 32 KiB header buffer. Set `PF_UPSTREAM_IDLE_TIMEOUT` below the backend's keepalive timeout to reduce stale connection reuse; for example, use `15s` when the backend closes idle connections after `30s`.
 
 For measured results and their limits, see [BENCHMARKS.md](BENCHMARKS.md). The reproducible Docker harness is documented in [bench/README.md](bench/README.md).
 

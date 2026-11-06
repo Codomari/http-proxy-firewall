@@ -64,7 +64,8 @@ func New(cfg config.Config, logger *slog.Logger) (*Handler, error) {
 		Addr: address, IsTLS: target.Scheme == "https", TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12, ServerName: target.Hostname()},
 		MaxConns: cfg.Proxy.MaxConnections, MaxIdleConnDuration: cfg.Proxy.IdleTimeout,
 		ReadTimeout: cfg.Proxy.ReadTimeout, WriteTimeout: cfg.Proxy.WriteTimeout,
-		MaxIdemponentCallAttempts: 1, DisablePathNormalizing: true,
+		MaxIdemponentCallAttempts: 2, RetryIfErr: retryUpstreamRequest,
+		ReadBufferSize: 32 << 10, DisablePathNormalizing: true,
 		StreamResponseBody: true, NoDefaultUserAgentHeader: true, SecureErrorLogMessage: true,
 	}
 	if err := h.configureRoutes(cfg, logger); err != nil {
@@ -160,7 +161,7 @@ func (h *Handler) fail(c fiber.Ctx, err error) error {
 		status = fiber.StatusServiceUnavailable
 		c.Set("Retry-After", "1")
 	}
-	h.logError(c, err)
+	h.logError(c, status, err)
 	return c.SendStatus(status)
 }
 
@@ -194,7 +195,7 @@ func (h *Handler) prepareRequest(c fiber.Ctx, host string) (*fasthttp.Request, s
 	return request, upgradeProtocol
 }
 
-func (h *Handler) logError(c fiber.Ctx, err error) {
+func (h *Handler) logError(c fiber.Ctx, status int, err error) {
 	// One bounded message per interval keeps an upstream outage from becoming
 	// a synchronous logging bottleneck. Request metrics still count every error.
 	h.mu.Lock()
@@ -204,7 +205,11 @@ func (h *Handler) logError(c fiber.Ctx, err error) {
 	}
 	h.mu.Unlock()
 	if emit {
-		attributes := []any{"client_ip", firewall.ClientIP(c), "error_type", fmt.Sprintf("%T", err)}
+		attributes := []any{
+			"client_ip", firewall.ClientIP(c), "error_type", fmt.Sprintf("%T", err),
+			"error_reason", upstreamErrorReason(err), "status", status,
+			"upstream", h.client.Addr, "method", string(c.Request().Header.Method()),
+		}
 		if hostname, hostErr := firewall.CanonicalHostname(string(c.Request().Header.Host())); hostErr == nil {
 			attributes = append(attributes, "hostname", hostname)
 		}

@@ -18,6 +18,8 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
+var errUnexpectedUpgradeProtocol = errors.New("upstream switched to an unexpected protocol")
+
 // HTTP upgrade handshakes use a dedicated bounded tunnel. fasthttp's HTTP client
 // intentionally does not expose upgraded connections from its keepalive pool.
 func (h *Handler) upgrade(c fiber.Ctx, request *fasthttp.Request, protocol string, release func()) error {
@@ -64,7 +66,7 @@ func (h *Handler) upgrade(c fiber.Ctx, request *fasthttp.Request, protocol strin
 	if response.StatusCode == http.StatusSwitchingProtocols && (!strings.EqualFold(response.Header.Get("Upgrade"), protocol) || !hasToken(response.Header.Get("Connection"), "upgrade")) {
 		_ = response.Body.Close()
 		_ = conn.Close()
-		return h.fail(c, errors.New("upstream switched to an unexpected protocol"))
+		return h.fail(c, errUnexpectedUpgradeProtocol)
 	}
 	for name, values := range response.Header {
 		for _, value := range values {
