@@ -11,6 +11,7 @@ import (
 )
 
 type GeneralRules struct {
+	ConnectionLimits
 	WhitelistIPs              []string `json:"whitelist_ips"`
 	WhitelistNetworks         []string `json:"whitelist_networks"`
 	AllowedCountries          []string `json:"allowed_countries"`
@@ -20,14 +21,17 @@ type GeneralRules struct {
 	UpstreamRequestRetryTimes int      `json:"upstream_request_retry_times"`
 }
 
-var generalRuleKeys = []string{"IP_FILTER_WHITELIST", "IP_FILTER_WHITELIST_NETWORKS", "IP_FILTER_ALLOWED_COUNTRIES", "IP_FILTER_WHITELIST_CHECKPOINT", "IP_FILTER_COUNTRIES_CHECKPOINT", "DOS_DETECTOR_HOSTNAME_REQUEST_THRESHOLD", "PF_UPSTREAM_REQUEST_RETRY_TIMES"}
+var generalRuleKeys = []string{"IP_FILTER_WHITELIST", "IP_FILTER_WHITELIST_NETWORKS", "IP_FILTER_ALLOWED_COUNTRIES", "IP_FILTER_WHITELIST_CHECKPOINT", "IP_FILTER_COUNTRIES_CHECKPOINT", "DOS_DETECTOR_HOSTNAME_REQUEST_THRESHOLD", "PF_UPSTREAM_REQUEST_RETRY_TIMES", "PF_MAX_CONCURRENT_REQUESTS", "PF_UPSTREAM_MAX_CONNECTIONS", "PF_UPSTREAM_ALLOW_OVERFLOW", "PF_UPSTREAM_MAX_OVERFLOW_CONNECTIONS"}
 
 func GeneralRulesFromFirewall(f Firewall) GeneralRules {
-	return GeneralRules{WhitelistIPs: f.WhitelistIPs, WhitelistNetworks: f.WhitelistNetworks, AllowedCountries: f.AllowedCountries, IPCheckpoint: f.WhitelistCheckpoint, CountryCheckpoint: f.CountryCheckpoint, DDoSThreshold: f.RequestThreshold}
+	return GeneralRules{ConnectionLimits: ConnectionLimitsFromConfig(Defaults()), WhitelistIPs: f.WhitelistIPs, WhitelistNetworks: f.WhitelistNetworks, AllowedCountries: f.AllowedCountries, IPCheckpoint: f.WhitelistCheckpoint, CountryCheckpoint: f.CountryCheckpoint, DDoSThreshold: f.RequestThreshold}
 }
 
 func (rules GeneralRules) Normalize() (GeneralRules, error) {
 	result := rules
+	if err := result.ConnectionLimits.Validate(); err != nil {
+		return GeneralRules{}, err
+	}
 	if result.UpstreamRequestRetryTimes < 0 {
 		return GeneralRules{}, errors.New("upstream request retry times must be a non-negative integer")
 	}
@@ -96,7 +100,23 @@ func (file *GeneralRulesFile) yamlStore() *YAMLStore {
 }
 
 func generalRulesFromValues(values map[string]string) (GeneralRules, error) {
-	rules := GeneralRules{WhitelistIPs: split(values[generalRuleKeys[0]]), WhitelistNetworks: split(values[generalRuleKeys[1]]), AllowedCountries: split(values[generalRuleKeys[2]]), IPCheckpoint: true, CountryCheckpoint: true, DDoSThreshold: 200, UpstreamRequestRetryTimes: Defaults().Proxy.RequestRetryTimes}
+	rules := GeneralRules{ConnectionLimits: ConnectionLimitsFromConfig(Defaults()), WhitelistIPs: split(values[generalRuleKeys[0]]), WhitelistNetworks: split(values[generalRuleKeys[1]]), AllowedCountries: split(values[generalRuleKeys[2]]), IPCheckpoint: true, CountryCheckpoint: true, DDoSThreshold: 200, UpstreamRequestRetryTimes: Defaults().Proxy.RequestRetryTimes}
+	for key, target := range map[string]*int{"PF_MAX_CONCURRENT_REQUESTS": &rules.MaxConcurrentRequests, "PF_UPSTREAM_MAX_CONNECTIONS": &rules.UpstreamMaxConnections, "PF_UPSTREAM_MAX_OVERFLOW_CONNECTIONS": &rules.UpstreamMaxOverflowConnections} {
+		if value := values[key]; value != "" {
+			parsed, err := strconv.Atoi(value)
+			if err != nil {
+				return GeneralRules{}, errors.New(key + " must be an integer")
+			}
+			*target = parsed
+		}
+	}
+	if value := values["PF_UPSTREAM_ALLOW_OVERFLOW"]; value != "" {
+		parsed, err := strconv.ParseBool(value)
+		if err != nil {
+			return GeneralRules{}, errors.New("PF_UPSTREAM_ALLOW_OVERFLOW must be true or false")
+		}
+		rules.UpstreamAllowOverflow = parsed
+	}
 	if value := values[generalRuleKeys[6]]; value != "" {
 		var err error
 		rules.UpstreamRequestRetryTimes, err = strconv.Atoi(value)
@@ -143,7 +163,11 @@ func (file *GeneralRulesFile) Save(rules GeneralRules) error {
 	return file.yamlStore().UpdateEnvironment(map[string]string{
 		generalRuleKeys[0]: strings.Join(rules.WhitelistIPs, ","), generalRuleKeys[1]: strings.Join(rules.WhitelistNetworks, ","), generalRuleKeys[2]: strings.Join(rules.AllowedCountries, ","),
 		generalRuleKeys[3]: strconv.FormatBool(rules.IPCheckpoint), generalRuleKeys[4]: strconv.FormatBool(rules.CountryCheckpoint), generalRuleKeys[5]: strconv.FormatUint(rules.DDoSThreshold, 10),
-		generalRuleKeys[6]: strconv.Itoa(rules.UpstreamRequestRetryTimes),
+		generalRuleKeys[6]:                     strconv.Itoa(rules.UpstreamRequestRetryTimes),
+		"PF_MAX_CONCURRENT_REQUESTS":           strconv.Itoa(rules.MaxConcurrentRequests),
+		"PF_UPSTREAM_MAX_CONNECTIONS":          strconv.Itoa(rules.UpstreamMaxConnections),
+		"PF_UPSTREAM_ALLOW_OVERFLOW":           strconv.FormatBool(rules.UpstreamAllowOverflow),
+		"PF_UPSTREAM_MAX_OVERFLOW_CONNECTIONS": strconv.Itoa(rules.UpstreamMaxOverflowConnections),
 	})
 }
 

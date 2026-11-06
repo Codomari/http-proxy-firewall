@@ -127,7 +127,7 @@ func TestAbortedUpgradeReleasesTunnelAndMonitoring(t *testing.T) {
 			deadline, tick := time.NewTimer(time.Second), time.NewTicker(time.Millisecond)
 			defer deadline.Stop()
 			defer tick.Stop()
-			for len(route.slots) != 0 || stats.Totals().InFlight != 0 || handler.handoffs.count.Load() != 0 {
+			for route.slots.InUse() != 0 || stats.Totals().InFlight != 0 || handler.handoffs.count.Load() != 0 {
 				select {
 				case <-deadline.C:
 					t.Fatal("aborted upgrade retained admission, pending handoff, or monitoring state")

@@ -96,6 +96,8 @@ func (r *environment) applyProxy(settings *Proxy) {
 	settings.Upstream = r.text("PF_PROXY_TO", settings.Upstream)
 	settings.Routes = parseRoutes(r.text("PF_UPSTREAM_ROUTES", ""), &r.errs)
 	settings.MaxConnections = r.integer("PF_UPSTREAM_MAX_CONNECTIONS", settings.MaxConnections)
+	settings.AllowOverflow = r.boolean("PF_UPSTREAM_ALLOW_OVERFLOW", settings.AllowOverflow)
+	settings.MaxOverflowConnections = r.integer("PF_UPSTREAM_MAX_OVERFLOW_CONNECTIONS", settings.MaxOverflowConnections)
 	settings.RequestRetryTimes = r.integer("PF_UPSTREAM_REQUEST_RETRY_TIMES", settings.RequestRetryTimes)
 	settings.ReadTimeout = r.duration("PF_UPSTREAM_READ_TIMEOUT", settings.ReadTimeout)
 	settings.WriteTimeout = r.duration("PF_UPSTREAM_WRITE_TIMEOUT", settings.WriteTimeout)
@@ -213,6 +215,8 @@ func parseFlags(c Config, args []string, output io.Writer) (Config, error) {
 	flags.IntVar(&c.HTTP.MaxConnections, "max-connections", c.HTTP.MaxConnections, "maximum inbound connections")
 	flags.IntVar(&c.HTTP.MaxConcurrentRequests, "max-concurrent-requests", c.HTTP.MaxConcurrentRequests, "maximum active request handlers")
 	flags.IntVar(&c.Proxy.MaxConnections, "upstream-max-connections", c.Proxy.MaxConnections, "maximum upstream connections")
+	flags.BoolVar(&c.Proxy.AllowOverflow, "upstream-allow-overflow", c.Proxy.AllowOverflow, "allow temporary upstream burst connections")
+	flags.IntVar(&c.Proxy.MaxOverflowConnections, "upstream-max-overflow-connections", c.Proxy.MaxOverflowConnections, "absolute upstream connection ceiling when overflow is enabled")
 	flags.IntVar(&c.Proxy.RequestRetryTimes, "upstream-request-retry-times", c.Proxy.RequestRetryTimes, "additional retries for safe upstream connection failures (0 disables)")
 	flags.DurationVar(&c.HTTP.ReadTimeout, "read-timeout", c.HTTP.ReadTimeout, "inbound request read deadline")
 	flags.DurationVar(&c.HTTP.WriteTimeout, "write-timeout", c.HTTP.WriteTimeout, "inbound response write deadline")
@@ -271,6 +275,9 @@ func (c Config) Validate() error {
 	check(c.Firewall.RejectionLogInterval >= 0, "rejection log interval cannot be negative")
 	check(c.HTTP.MaxConnections > 0 && c.HTTP.MaxConcurrentRequests > 0 && c.Proxy.MaxConnections > 0, "connection and concurrency limits must be positive")
 	check(c.Proxy.RequestRetryTimes >= 0, "PF_UPSTREAM_REQUEST_RETRY_TIMES must be a non-negative integer")
+	if err := ConnectionLimitsFromConfig(c).Validate(); err != nil {
+		errs = append(errs, err)
+	}
 	check(c.HTTP.ReadTimeout > 0 && c.HTTP.WriteTimeout > 0 && c.HTTP.IdleTimeout > 0 && c.Proxy.ReadTimeout > 0 && c.Proxy.WriteTimeout > 0 && c.Proxy.IdleTimeout > 0, "HTTP timeouts must be positive")
 	check(c.Firewall.SamplingWindow >= time.Second && c.Firewall.PenaltyLifetime > 0 && c.Firewall.CookieLifetime > 0, "firewall durations must be positive and sampling window at least one second")
 	check(c.Redis.DB >= 0 && c.Redis.Timeout > 0 && c.Redis.QueueSize > 0 && c.Redis.Workers > 0, "Redis database, timeout, queue size or worker count is invalid")

@@ -22,11 +22,17 @@ type upstreamSettingsSource interface {
 // SetUpstreamSettings connects live proxy settings before mounting routes.
 func (h *Handler) SetUpstreamSettings(source upstreamSettingsSource) { h.upstream = source }
 
+type connectionSettingsSource interface{ SetConnectionLimits(config.ConnectionLimits) }
+
+// SetConnectionSettings connects live limits before mounting the admin routes.
+func (h *Handler) SetConnectionSettings(source connectionSettingsSource) { h.connections = source }
+
 type generalRulesSnapshot struct {
 	config.GeneralRules
-	Available         bool     `json:"available"`
-	Overrides         []string `json:"overrides"`
-	UpstreamAvailable bool     `json:"upstream_available"`
+	Available                 bool     `json:"available"`
+	Overrides                 []string `json:"overrides"`
+	UpstreamAvailable         bool     `json:"upstream_available"`
+	ConnectionLimitsAvailable bool     `json:"connection_limits_available"`
 }
 
 func (h *Handler) generalRulesSnapshot() (generalRulesSnapshot, error) {
@@ -34,7 +40,7 @@ func (h *Handler) generalRulesSnapshot() (generalRulesSnapshot, error) {
 	if err != nil {
 		return generalRulesSnapshot{}, err
 	}
-	result := generalRulesSnapshot{GeneralRules: rules, Available: h.general != nil, Overrides: h.generalFile.ProcessOverrides(), UpstreamAvailable: h.upstream != nil}
+	result := generalRulesSnapshot{GeneralRules: rules, Available: h.general != nil, Overrides: h.generalFile.ProcessOverrides(), UpstreamAvailable: h.upstream != nil, ConnectionLimitsAvailable: h.connections != nil}
 	return result, nil
 }
 
@@ -67,13 +73,17 @@ func (h *Handler) serveGeneralRules(c fiber.Ctx) error {
 			return c.Status(413).JSON(fiber.Map{"error": "Unable to read settings within the 64 KiB limit"})
 		}
 		var input struct {
-			WhitelistIPs              []string `json:"whitelist_ips"`
-			WhitelistNetworks         []string `json:"whitelist_networks"`
-			AllowedCountries          []string `json:"allowed_countries"`
-			IPCheckpoint              *bool    `json:"ip_checkpoint"`
-			CountryCheckpoint         *bool    `json:"country_checkpoint"`
-			DDoSThreshold             *uint64  `json:"ddos_threshold"`
-			UpstreamRequestRetryTimes *int     `json:"upstream_request_retry_times"`
+			WhitelistIPs                   []string `json:"whitelist_ips"`
+			WhitelistNetworks              []string `json:"whitelist_networks"`
+			AllowedCountries               []string `json:"allowed_countries"`
+			IPCheckpoint                   *bool    `json:"ip_checkpoint"`
+			CountryCheckpoint              *bool    `json:"country_checkpoint"`
+			DDoSThreshold                  *uint64  `json:"ddos_threshold"`
+			UpstreamRequestRetryTimes      *int     `json:"upstream_request_retry_times"`
+			MaxConcurrentRequests          *int     `json:"max_concurrent_requests"`
+			UpstreamMaxConnections         *int     `json:"upstream_max_connections"`
+			UpstreamAllowOverflow          *bool    `json:"upstream_allow_overflow"`
+			UpstreamMaxOverflowConnections *int     `json:"upstream_max_overflow_connections"`
 		}
 		decoder := json.NewDecoder(bytes.NewReader(data))
 		decoder.DisallowUnknownFields()
@@ -89,13 +99,31 @@ func (h *Handler) serveGeneralRules(c fiber.Ctx) error {
 			return c.Status(503).JSON(fiber.Map{"error": "Unable to read general settings YAML"})
 		}
 		retries := previous.UpstreamRequestRetryTimes
+		limits := previous.ConnectionLimits
+		if input.MaxConcurrentRequests != nil || input.UpstreamMaxConnections != nil || input.UpstreamAllowOverflow != nil || input.UpstreamMaxOverflowConnections != nil {
+			if h.connections == nil {
+				return c.Status(503).JSON(fiber.Map{"error": "Connection settings are unavailable"})
+			}
+			if input.MaxConcurrentRequests != nil {
+				limits.MaxConcurrentRequests = *input.MaxConcurrentRequests
+			}
+			if input.UpstreamMaxConnections != nil {
+				limits.UpstreamMaxConnections = *input.UpstreamMaxConnections
+			}
+			if input.UpstreamAllowOverflow != nil {
+				limits.UpstreamAllowOverflow = *input.UpstreamAllowOverflow
+			}
+			if input.UpstreamMaxOverflowConnections != nil {
+				limits.UpstreamMaxOverflowConnections = *input.UpstreamMaxOverflowConnections
+			}
+		}
 		if input.UpstreamRequestRetryTimes != nil {
 			if h.upstream == nil {
 				return c.Status(503).JSON(fiber.Map{"error": "Upstream settings are unavailable"})
 			}
 			retries = *input.UpstreamRequestRetryTimes
 		}
-		rules, err := (config.GeneralRules{WhitelistIPs: input.WhitelistIPs, WhitelistNetworks: input.WhitelistNetworks, AllowedCountries: input.AllowedCountries, IPCheckpoint: *input.IPCheckpoint, CountryCheckpoint: *input.CountryCheckpoint, DDoSThreshold: *input.DDoSThreshold, UpstreamRequestRetryTimes: retries}).Normalize()
+		rules, err := (config.GeneralRules{ConnectionLimits: limits, WhitelistIPs: input.WhitelistIPs, WhitelistNetworks: input.WhitelistNetworks, AllowedCountries: input.AllowedCountries, IPCheckpoint: *input.IPCheckpoint, CountryCheckpoint: *input.CountryCheckpoint, DDoSThreshold: *input.DDoSThreshold, UpstreamRequestRetryTimes: retries}).Normalize()
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 		}
@@ -107,6 +135,9 @@ func (h *Handler) serveGeneralRules(c fiber.Ctx) error {
 		}
 		if h.upstream != nil {
 			h.upstream.SetRequestRetryTimes(rules.UpstreamRequestRetryTimes)
+		}
+		if h.connections != nil {
+			h.connections.SetConnectionLimits(rules.ConnectionLimits)
 		}
 		result, err := h.generalRulesSnapshot()
 		if err != nil {

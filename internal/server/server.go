@@ -44,6 +44,8 @@ type Server struct {
 	adminUI       *admin.Handler
 	stats         *monitoring.Registry
 	statusCountry func(fiber.Ctx) string
+	admission     requestAdmission
+	upstream      *proxy.Handler
 	mu            sync.Mutex
 	listeners     []net.Listener
 	httpAddress   net.Addr
@@ -82,6 +84,8 @@ func New(cfg config.Config, engine *firewall.Engine, upstream *proxy.Handler, lo
 		}
 	}
 	s := &Server{cfg: cfg, logger: logger, errors: make(chan error, 3), stats: stats, adminUI: adminHandler, statusCountry: engine.ClientCountry}
+	s.upstream = upstream
+	s.admission.limit = cfg.HTTP.MaxConcurrentRequests
 	basePath, err := config.AdminPath(cfg.Admin.URI)
 	if err != nil {
 		return nil, err
@@ -92,6 +96,7 @@ func New(cfg config.Config, engine *firewall.Engine, upstream *proxy.Handler, lo
 	}
 	s.adminUI.SetCertificateBlacklist(s.certGuard)
 	s.adminUI.SetUpstreamSettings(upstream)
+	s.adminUI.SetConnectionSettings(s)
 	s.adminUI.SetTestPages(s.statusTestPages())
 	s.certGuard.behindCloudflare = engine.BehindCloudflare
 	s.certGuard.country = engine.ClientCountry

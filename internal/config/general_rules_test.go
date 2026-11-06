@@ -32,7 +32,7 @@ debug: []
 		t.Fatal(err)
 	}
 	file := GeneralRulesFile{Path: path}
-	settings := GeneralRules{WhitelistIPs: []string{"203.0.113.8", "::ffff:203.0.113.8", "2001:db8::8"}, WhitelistNetworks: []string{"203.0.113.9/24"}, AllowedCountries: []string{" Azerbaijan ", "Turkey", "turkey"}, IPCheckpoint: true, CountryCheckpoint: false, DDoSThreshold: 350}
+	settings := GeneralRules{ConnectionLimits: ConnectionLimitsFromConfig(Defaults()), WhitelistIPs: []string{"203.0.113.8", "::ffff:203.0.113.8", "2001:db8::8"}, WhitelistNetworks: []string{"203.0.113.9/24"}, AllowedCountries: []string{" Azerbaijan ", "Turkey", "turkey"}, IPCheckpoint: true, CountryCheckpoint: false, DDoSThreshold: 350}
 	if err := file.Save(settings); err != nil {
 		t.Fatal(err)
 	}

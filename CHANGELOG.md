@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.32 — 2026-11-06
+
+Two logical user-facing features since 0.3.30, following the project's patch-count convention.
+
+### Added
+
+- Edit global request concurrency and normal upstream connection limits in Admin → Rules → General settings. Saves persist to the private YAML override and update the running admission gate and every upstream route without a restart; older clients preserve omitted fields, and failed validation or file saves leave runtime limits unchanged.
+- Add opt-in temporary upstream bursting with `PF_UPSTREAM_ALLOW_OVERFLOW` and `PF_UPSTREAM_MAX_OVERFLOW_CONNECTIONS`. The latter is an absolute total ceiling, including normal capacity. Overflow connections open on demand and close when their response finishes; normal keepalive remains reusable. Streams and upgraded tunnels share the hard ceiling. Live reductions drain active work, clear idle connections and reject new requests until capacity is available. Defaults remain 256 normal connections with overflow disabled and a configurable 512-connection burst ceiling.
+
 ## 0.3.30 — 2026-11-06
 
 Fifteen logical user-facing changes since 0.3.15, following the project's patch-count convention.

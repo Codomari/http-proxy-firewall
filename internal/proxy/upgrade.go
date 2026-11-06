@@ -30,6 +30,9 @@ func (h *Handler) upgrade(c fiber.Ctx, request *fasthttp.Request, protocol strin
 		}
 	}()
 	dialer := &net.Dialer{Timeout: h.timeout}
+	// Tunnels use a raw connection outside HostClient. Release idle sockets
+	// before dialing so those sockets cannot add to the shared hard ceiling.
+	h.client.CloseIdleConnections()
 	conn, err := dialer.Dial("tcp", h.client.Addr)
 	if err != nil {
 		return h.fail(c, err)

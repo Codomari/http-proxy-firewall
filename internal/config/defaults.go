@@ -17,7 +17,7 @@ func Defaults() Config {
 			MaxConnections: 10000, MaxConcurrentRequests: 256,
 		},
 		Proxy: Proxy{
-			Upstream: "http://127.0.0.1:8008", MaxConnections: 256, RequestRetryTimes: 3,
+			Upstream: "http://127.0.0.1:8008", MaxConnections: 256, MaxOverflowConnections: 512, RequestRetryTimes: 3,
 			ReadTimeout: 10 * time.Minute, WriteTimeout: 10 * time.Minute, IdleTimeout: time.Minute,
 			IPv4Redirect: "https://hostinq.biz",
 		},

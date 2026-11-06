@@ -102,16 +102,13 @@ func (s *Server) configureACME() {
 }
 
 func (s *Server) admissionHandler() fiber.Handler {
-	requests := make(chan struct{}, s.cfg.HTTP.MaxConcurrentRequests)
 	return func(c fiber.Ctx) (err error) {
-		select {
-		case requests <- struct{}{}:
-		default:
+		if !s.admission.acquire() {
 			c.Set("Retry-After", "1")
 			return c.SendStatus(fiber.StatusServiceUnavailable)
 		}
 		defer func() {
-			<-requests
+			s.admission.release()
 			if value := recover(); value != nil {
 				s.logger.Error("request handler panic", "panic_type", fmt.Sprintf("%T", value))
 				err = fiber.ErrInternalServerError

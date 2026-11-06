@@ -1,6 +1,6 @@
 # http-proxy-firewall
 
-Version **0.3.30** · [Changelog](CHANGELOG.md) · [MIT license](LICENSE)
+Version **0.3.32** · [Changelog](CHANGELOG.md) · [MIT license](LICENSE)
 
 A reverse proxy and Layer 7 firewall that sits in front of your web applications. It checks requests before forwarding them, adds a cookie checkpoint during traffic spikes, and provides an embedded admin dashboard.
 
@@ -144,6 +144,7 @@ The names below work both as process environment variables and as `env[].key` en
 | Penalty and cookie lifetimes | `DOS_DETECTOR_HOSTNAME_PENALTY_LIFETIME`, `PF_COOKIE_LIFETIME` |
 | Body inspection and cache limits | `CVE_MITIGATOR_MAX_BODY_BYTES`, `PF_MAX_BUFFERED_BYTES`, `CVE_MITIGATOR_UPLOAD_PROGRESS_NAMES`, `PF_CACHE_CAPACITY` |
 | Connection and request limits | `PF_MAX_CONNECTIONS`, `PF_MAX_CONCURRENT_REQUESTS`, `PF_UPSTREAM_MAX_CONNECTIONS` |
+| Temporary upstream burst capacity | `PF_UPSTREAM_ALLOW_OVERFLOW`, `PF_UPSTREAM_MAX_OVERFLOW_CONNECTIONS`; editable in [General settings](#general-settings). |
 | Incoming timeouts | `PF_READ_TIMEOUT`, `PF_WRITE_TIMEOUT`, `PF_IDLE_TIMEOUT` |
 | Upstream timeouts | `PF_UPSTREAM_READ_TIMEOUT`, `PF_UPSTREAM_WRITE_TIMEOUT`, `PF_UPSTREAM_IDLE_TIMEOUT` |
 | Upstream connection retries | `PF_UPSTREAM_REQUEST_RETRY_TIMES` (`3` additional retries; `0` disables) |
@@ -235,10 +236,20 @@ Open **Rules → General settings**, edit the fields, then press **Save general 
 | Apply cookie checkpoint to whitelisted countries | `IP_FILTER_COUNTRIES_CHECKPOINT` | `true` |
 | DDoS threshold in requests/second per hostname | `DOS_DETECTOR_HOSTNAME_REQUEST_THRESHOLD` | `200` |
 | Upstream request retries | `PF_UPSTREAM_REQUEST_RETRY_TIMES` | `3` additional retries; `0` disables |
+| Concurrent request handlers | `PF_MAX_CONCURRENT_REQUESTS` | `256` |
+| Normal upstream connections | `PF_UPSTREAM_MAX_CONNECTIONS` | `256` per upstream pool |
+| Allow temporary overflow connections | `PF_UPSTREAM_ALLOW_OVERFLOW` | `false` |
+| Maximum connections during a burst | `PF_UPSTREAM_MAX_OVERFLOW_CONNECTIONS` | `512` total, including normal connections |
 
 Enter IPs, CIDR networks and English country names using commas or newlines. Each whitelist accepts up to 512 entries. The DDoS threshold accepts integers from 1 to 1,000,000,000 and uses a ten-second sampling window.
 
 Upstream request retries accepts a non-negative integer. Saving applies immediately to new requests on every upstream route and persists the value to the private override YAML. A value of `5` allows the initial attempt plus five retries; `0` allows just the initial attempt. Only connection closure, reset or broken pipe errors on GET/HEAD requests without a body qualify.
+
+Connection settings also apply immediately when saved. Request concurrency controls how many request handlers run together. Upstream connection reservations last through the complete response or upgraded tunnel, so slow streams can consume pool capacity after request processing has finished. Hostnames using the default upstream share its pool; configured host routes have their own pools.
+
+Enable **Allow temporary overflow connections** to burst above the normal pool size. **Maximum connections during a burst** is the absolute total ceiling, not an additional count: normal `256` and ceiling `512` allow up to `512` total connections. The ceiling must be at least the normal limit when enabled. Connections are opened only when needed. Overflow HTTP connections close as soon as their response finishes, while normal connections can be reused. Upgraded tunnels share the same capacity and close when their session ends. At the ceiling, new requests receive 503 rather than creating unlimited connections; retries do not bypass this limit.
+
+Overflow is disabled by default to preserve existing deployment limits. Disabling it or reducing limits allows active responses and tunnels to finish, rejecting new work until capacity is available. Reductions clear idle connections; normal keepalive connections reopen on demand. Older admin clients that omit the new fields retain their saved values. Process environment and command-line overrides still regain precedence after a restart.
 
 ```mermaid
 flowchart LR
@@ -251,7 +262,7 @@ flowchart LR
 
 Both checkpoint switches default to enabled. During a hostname's DDoS penalty, matching whitelisted clients still need the cookie. Disable a switch to allow that whitelist to bypass the checkpoint. If both lists match, an enabled switch takes priority. Static-file exemptions remain in effect, and CVE/body and bot-query checks always run first.
 
-Threshold changes affect detection immediately; existing penalties keep their expiry. A failed file save leaves the active settings unchanged. Saves update only the six listed entries, preserving other YAML values and comments. The API does not return unrelated environment values or secrets.
+Threshold changes affect detection immediately; existing penalties keep their expiry. A failed file save leaves the active settings unchanged. Saves update only the settings listed above, preserving other YAML values and comments. The API does not return unrelated environment values or secrets.
 
 ### Domain rules and the real client IP
 

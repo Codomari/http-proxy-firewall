@@ -63,6 +63,7 @@ type Handler struct {
 	cloudflare    cloudflareSource
 	general       generalRulesSource
 	upstream      upstreamSettingsSource
+	connections   connectionSettingsSource
 	generalFile   config.GeneralRulesFile
 	generalMu     sync.Mutex
 	certBlacklist CertificateBlacklist

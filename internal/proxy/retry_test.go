@@ -89,7 +89,7 @@ func TestStaleUpstreamConnectionRetry(t *testing.T) {
 			if calls.Load() != wantCalls {
 				t.Fatalf("backend calls = %d; want %d", calls.Load(), wantCalls)
 			}
-			if len(handler.slots) != 0 {
+			if handler.slots.InUse() != 0 {
 				t.Error("completed request retained its admission slot")
 			}
 		})

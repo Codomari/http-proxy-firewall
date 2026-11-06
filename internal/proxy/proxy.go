@@ -27,7 +27,7 @@ type Handler struct {
 	redirect   string
 	logger     *slog.Logger
 	timeout    time.Duration
-	slots      chan struct{}
+	slots      connectionSlots
 	mu         sync.Mutex
 	tunnels    map[net.Conn]struct{}
 	closed     atomic.Bool
@@ -46,8 +46,8 @@ func New(cfg config.Config, logger *slog.Logger) (*Handler, error) {
 	if err != nil || target.Hostname() == "" || (target.Scheme != "http" && target.Scheme != "https") || target.User != nil || (target.Path != "" && target.Path != "/") || target.RawQuery != "" || target.Fragment != "" {
 		return nil, errors.New("proxy upstream must be an http(s) host with an optional port, without credentials or a path")
 	}
-	if cfg.Proxy.MaxConnections < 1 {
-		return nil, errors.New("proxy max connections must be positive")
+	if err := cfg.Proxy.ValidateConnectionLimits(); err != nil {
+		return nil, err
 	}
 	if cfg.Proxy.RequestRetryTimes < 0 {
 		return nil, errors.New("proxy request retry times cannot be negative")
@@ -55,7 +55,12 @@ func New(cfg config.Config, logger *slog.Logger) (*Handler, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	h := &Handler{target: target, redirect: cfg.Proxy.IPv4Redirect, logger: logger, timeout: cfg.Proxy.WriteTimeout, slots: make(chan struct{}, cfg.Proxy.MaxConnections), tunnels: make(map[net.Conn]struct{}), handoffs: &upgradeHandoffs{}}
+	h := &Handler{target: target, redirect: cfg.Proxy.IPv4Redirect, logger: logger, timeout: cfg.Proxy.WriteTimeout, tunnels: make(map[net.Conn]struct{}), handoffs: &upgradeHandoffs{}}
+	h.slots.base, h.slots.ceiling, h.slots.allowOverflow = cfg.Proxy.MaxConnections, cfg.Proxy.MaxOverflowConnections, cfg.Proxy.AllowOverflow
+	connectionLimit := cfg.Proxy.MaxConnections
+	if cfg.Proxy.AllowOverflow {
+		connectionLimit = cfg.Proxy.MaxOverflowConnections
+	}
 	h.retryTimes.Store(int64(cfg.Proxy.RequestRetryTimes))
 	address = target.Host
 	if target.Port() == "" {
@@ -67,7 +72,7 @@ func New(cfg config.Config, logger *slog.Logger) (*Handler, error) {
 	}
 	h.client = &fasthttp.HostClient{
 		Addr: address, IsTLS: target.Scheme == "https", TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12, ServerName: target.Hostname()},
-		MaxConns: cfg.Proxy.MaxConnections, MaxIdleConnDuration: cfg.Proxy.IdleTimeout,
+		MaxConns: connectionLimit, MaxIdleConnDuration: cfg.Proxy.IdleTimeout,
 		ReadTimeout: cfg.Proxy.ReadTimeout, WriteTimeout: cfg.Proxy.WriteTimeout,
 		// Retry in doRequest so live updates never mutate HostClient configuration.
 		MaxIdemponentCallAttempts: 1,
@@ -125,13 +130,16 @@ func (h *Handler) Handle(c fiber.Ctx) error {
 	if ip := net.ParseIP(strings.Trim(hostname, "[]")); ip != nil && ip.To4() != nil && h.redirect != "" {
 		return c.Redirect().Status(fiber.StatusMovedPermanently).To(h.redirect)
 	}
-	select {
-	case h.slots <- struct{}{}:
-	default:
+	overflow, admitted := h.slots.acquire()
+	if !admitted {
 		return h.fail(c, fasthttp.ErrNoFreeConns)
 	}
 	owned := true
-	release := func() { <-h.slots }
+	release := func() {
+		if h.slots.release(overflow) {
+			h.client.CloseIdleConnections()
+		}
+	}
 	defer func() {
 		if owned {
 			release()
@@ -142,6 +150,11 @@ func (h *Handler) Handle(c fiber.Ctx) error {
 	if upgradeProtocol != "" {
 		owned = false
 		return h.upgrade(c, request, upgradeProtocol, release)
+	}
+	// Overflow uses the bounded shared client but is never retained as idle
+	// keepalive capacity. The response stream owns this connection until close.
+	if overflow {
+		request.SetConnectionClose()
 	}
 	response := fasthttp.AcquireResponse()
 	if err := h.doRequest(request, response); err != nil {

@@ -75,6 +75,12 @@ env:
     value: "256"
   - key: PF_UPSTREAM_MAX_CONNECTIONS
     value: "256"
+  # Temporary connections above the normal limit close when their response finishes.
+  - key: PF_UPSTREAM_ALLOW_OVERFLOW
+    value: "false"
+  # Absolute total ceiling (not an additional count), used when overflow is enabled.
+  - key: PF_UPSTREAM_MAX_OVERFLOW_CONNECTIONS
+    value: "512"
   # Additional retries for empty GET/HEAD requests after a closed connection; 0 disables.
   - key: PF_UPSTREAM_REQUEST_RETRY_TIMES
     value: "3"

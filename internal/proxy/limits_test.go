@@ -36,7 +36,7 @@ func TestResponseStreamRetainsAdmissionSlotUntilTransferFinishes(t *testing.T) {
 	if line, err := reader.ReadString('\n'); err != nil || line != "first\n" {
 		t.Fatalf("first chunk = %q, %v", line, err)
 	}
-	if len(handler.slots) != 1 {
+	if handler.slots.InUse() != 1 {
 		t.Fatal("stream released admission after response headers")
 	}
 	second, err := client.Get(address)

@@ -22,10 +22,14 @@ type testGeneralRulesSource struct {
 	settings config.GeneralRules
 	saves    int
 	retries  int
+	limits   config.ConnectionLimits
 }
 
 func (source *testGeneralRulesSource) DDoSState(string) (bool, time.Time) { return false, time.Time{} }
 func (source *testGeneralRulesSource) SetRequestRetryTimes(times int)     { source.retries = times }
+func (source *testGeneralRulesSource) SetConnectionLimits(limits config.ConnectionLimits) {
+	source.limits = limits
+}
 func (source *testGeneralRulesSource) SetGeneralRules(settings config.GeneralRules) error {
 	source.settings = settings
 	source.saves++
@@ -49,9 +53,11 @@ func TestGeneralRulesAPIAuthenticationValidationPersistenceAndRuntime(t *testing
 	}
 	h.generalFile.Path = path
 	h.SetUpstreamSettings(source)
+	h.SetConnectionSettings(source)
 	app := fiber.New(fiber.Config{StreamRequestBody: true})
 	h.Mount(app)
-	settings := config.GeneralRules{WhitelistIPs: []string{"203.0.113.8"}, WhitelistNetworks: []string{"203.0.113.8/24"}, AllowedCountries: []string{"Azerbaijan", "Turkey"}, IPCheckpoint: true, CountryCheckpoint: false, DDoSThreshold: 350, UpstreamRequestRetryTimes: 5}
+	settings := config.GeneralRules{ConnectionLimits: config.ConnectionLimitsFromConfig(cfg), WhitelistIPs: []string{"203.0.113.8"}, WhitelistNetworks: []string{"203.0.113.8/24"}, AllowedCountries: []string{"Azerbaijan", "Turkey"}, IPCheckpoint: true, CountryCheckpoint: false, DDoSThreshold: 350, UpstreamRequestRetryTimes: 5}
+	settings.ConnectionLimits = config.ConnectionLimits{MaxConcurrentRequests: 8, UpstreamMaxConnections: 2, UpstreamAllowOverflow: true, UpstreamMaxOverflowConnections: 4}
 	payload, _ := json.Marshal(settings)
 	call := func(method, body, site, media string, auth, csrf bool) (int, []byte) {
 		t.Helper()
@@ -93,6 +99,12 @@ func TestGeneralRulesAPIAuthenticationValidationPersistenceAndRuntime(t *testing
 		{"POST", strings.Replace(string(payload), `"ddos_threshold":350`, `"ddos_threshold":1.5`, 1), "", "application/json", true, true, 400},
 		{"POST", strings.Replace(string(payload), `"upstream_request_retry_times":5`, `"upstream_request_retry_times":-1`, 1), "", "application/json", true, true, 400},
 		{"POST", strings.Replace(string(payload), `"upstream_request_retry_times":5`, `"upstream_request_retry_times":1.5`, 1), "", "application/json", true, true, 400},
+		{"POST", strings.Replace(string(payload), `"max_concurrent_requests":8`, `"max_concurrent_requests":0`, 1), "", "application/json", true, true, 400},
+		{"POST", strings.Replace(string(payload), `"upstream_max_connections":2`, `"upstream_max_connections":0`, 1), "", "application/json", true, true, 400},
+		{"POST", strings.Replace(string(payload), `"upstream_max_connections":2`, `"upstream_max_connections":2.5`, 1), "", "application/json", true, true, 400},
+		{"POST", strings.Replace(string(payload), `"upstream_max_overflow_connections":4`, `"upstream_max_overflow_connections":1`, 1), "", "application/json", true, true, 400},
+		{"POST", strings.Replace(string(payload), `"upstream_max_overflow_connections":4`, `"upstream_max_overflow_connections":-1`, 1), "", "application/json", true, true, 400},
+		{"POST", strings.Replace(string(payload), `"upstream_allow_overflow":true`, `"upstream_allow_overflow":"yes"`, 1), "", "application/json", true, true, 400},
 		{"POST", strings.Replace(string(payload), "203.0.113.8", "bad-ip", 1), "", "application/json", true, true, 400},
 		{"POST", strings.Repeat("x", 65537), "", "application/json", true, true, 413},
 		{"DELETE", "", "", "", true, true, 405},
@@ -111,7 +123,7 @@ func TestGeneralRulesAPIAuthenticationValidationPersistenceAndRuntime(t *testing
 	}
 	status, data := call("GET", "", "", "", true, false)
 	var loaded generalRulesSnapshot
-	if status != 200 || json.Unmarshal(data, &loaded) != nil || len(loaded.WhitelistIPs) != 1 || loaded.WhitelistIPs[0] != "198.51.100.1" || !loaded.IPCheckpoint || loaded.UpstreamRequestRetryTimes != 3 || !loaded.UpstreamAvailable {
+	if status != 200 || json.Unmarshal(data, &loaded) != nil || len(loaded.WhitelistIPs) != 1 || loaded.WhitelistIPs[0] != "198.51.100.1" || !loaded.IPCheckpoint || loaded.UpstreamRequestRetryTimes != 3 || !loaded.UpstreamAvailable || !loaded.ConnectionLimitsAvailable || loaded.MaxConcurrentRequests != 256 || loaded.UpstreamMaxConnections != 256 || loaded.UpstreamAllowOverflow || loaded.UpstreamMaxOverflowConnections != 512 {
 		t.Fatal("GET did not read YAML")
 	}
 	status, data = call("POST", string(payload), "same-origin", "application/json", true, true)
@@ -119,7 +131,7 @@ func TestGeneralRulesAPIAuthenticationValidationPersistenceAndRuntime(t *testing
 		t.Fatalf("save failed: %d %s", status, data)
 	}
 	want, _ := settings.Normalize()
-	if source.saves != 1 || source.retries != 5 || !reflect.DeepEqual(source.settings, want) || !reflect.DeepEqual(loaded.GeneralRules, want) {
+	if source.saves != 1 || source.retries != 5 || source.limits != settings.ConnectionLimits || !reflect.DeepEqual(source.settings, want) || !reflect.DeepEqual(loaded.GeneralRules, want) {
 		t.Fatal("saved settings were not applied immediately")
 	}
 	file := config.GeneralRulesFile{Path: path}
@@ -128,9 +140,15 @@ func TestGeneralRulesAPIAuthenticationValidationPersistenceAndRuntime(t *testing
 		t.Fatal("YAML save did not persist settings")
 	}
 	// Clients predating the retry control must preserve its saved value.
-	legacyPayload := strings.Replace(string(payload), `,"upstream_request_retry_times":5`, "", 1)
+	var legacy map[string]any
+	json.Unmarshal(payload, &legacy)
+	for _, key := range []string{"upstream_request_retry_times", "max_concurrent_requests", "upstream_max_connections", "upstream_allow_overflow", "upstream_max_overflow_connections"} {
+		delete(legacy, key)
+	}
+	legacyData, _ := json.Marshal(legacy)
+	legacyPayload := string(legacyData)
 	status, _ = call("POST", legacyPayload, "same-origin", "application/json", true, true)
-	if status != 200 || source.retries != 5 {
+	if status != 200 || source.retries != 5 || source.limits != settings.ConnectionLimits {
 		t.Fatal("legacy save reset the retry setting")
 	}
 	status, data = call("POST", strings.Replace(string(payload), `"upstream_request_retry_times":5`, `"upstream_request_retry_times":0`, 1), "same-origin", "application/json", true, true)

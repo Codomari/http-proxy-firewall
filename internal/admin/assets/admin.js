@@ -369,10 +369,13 @@
     byId("debug-empty").hidden = body.childElementCount > 0;
     text("debug-status", `${debug.enabled ? "Live" : "Capture disabled"} · ${number.format(body.childElementCount)} / 10,000 requests · pulls every 2 seconds${data.reset && body.childElementCount > data.entries.length ? " · log restarted or rotated" : ""}${debug.limited ? " · some log content was truncated" : ""}${debug.unparsed ? " · unparsed entries shown as text" : ""}`);
   }
-  const generalRules = {busy: false, dirty: false, key: "", available: false, upstreamAvailable: false, controller: null};
+  const generalRules = {busy: false, dirty: false, key: "", available: false, upstreamAvailable: false, connectionsAvailable: false, controller: null};
+  const connectionInputIDs = ["max-concurrent-requests", "upstream-max-connections", "upstream-allow-overflow", "upstream-max-overflow-connections"];
   function renderGeneralRules(data, saved = false) {
     generalRules.available = data.available;
     generalRules.upstreamAvailable = data.upstream_available;
+    generalRules.connectionsAvailable = data.connection_limits_available;
+    for (const id of connectionInputIDs) byId(id).disabled = generalRules.busy || !data.connection_limits_available;
     byId("upstream-request-retry-times").disabled = generalRules.busy || !data.upstream_available;
     byId("general-rules-save").disabled = generalRules.busy || !data.available;
     const key = JSON.stringify(data);
@@ -384,6 +387,10 @@
       byId("country-checkpoint").checked = data.country_checkpoint;
       byId("ddos-threshold").value = String(data.ddos_threshold);
       byId("upstream-request-retry-times").value = String(data.upstream_request_retry_times);
+      byId("max-concurrent-requests").value = String(data.max_concurrent_requests);
+      byId("upstream-max-connections").value = String(data.upstream_max_connections);
+      byId("upstream-allow-overflow").checked = data.upstream_allow_overflow;
+      byId("upstream-max-overflow-connections").value = String(data.upstream_max_overflow_connections);
       generalRules.key = key;
     }
     text("general-rules-status", data.available ? "Global rules · loaded from YAML · saved changes apply immediately" : "General rules are unavailable.");
@@ -420,6 +427,19 @@
     const list = id => byId(id).value.split(/[,\r\n]+/).map(value => value.trim()).filter(Boolean);
     const settings = {whitelist_ips: list("whitelist-ips"), whitelist_networks: list("whitelist-networks"), allowed_countries: list("allowed-countries"), ip_checkpoint: byId("ip-checkpoint").checked, country_checkpoint: byId("country-checkpoint").checked, ddos_threshold: Number(byId("ddos-threshold").value)};
     if (generalRules.upstreamAvailable) settings.upstream_request_retry_times = Number(byId("upstream-request-retry-times").value);
+    if (generalRules.connectionsAvailable) {
+      settings.max_concurrent_requests = Number(byId("max-concurrent-requests").value);
+      settings.upstream_max_connections = Number(byId("upstream-max-connections").value);
+      settings.upstream_allow_overflow = byId("upstream-allow-overflow").checked;
+      settings.upstream_max_overflow_connections = Number(byId("upstream-max-overflow-connections").value);
+      if (!Number.isSafeInteger(settings.max_concurrent_requests) || settings.max_concurrent_requests < 1 || !Number.isSafeInteger(settings.upstream_max_connections) || settings.upstream_max_connections < 1 || !Number.isSafeInteger(settings.upstream_max_overflow_connections) || settings.upstream_max_overflow_connections < 0 || settings.upstream_allow_overflow && settings.upstream_max_overflow_connections < settings.upstream_max_connections) {
+        generalRules.busy = false;
+        byId("general-rules-save").disabled = false;
+        text("general-rules-error", "Use positive request/normal limits and a non-negative burst ceiling. When overflow is enabled, its ceiling must be at least the normal limit.");
+        byId("general-rules-error").hidden = false;
+        return;
+      }
+    }
     const inputs = byId("general-rules-form").querySelectorAll("input, textarea");
     for (const input of inputs) input.disabled = true;
     const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 10000);
@@ -439,6 +459,7 @@
       generalRules.busy = false;
       for (const input of inputs) input.disabled = false;
       byId("upstream-request-retry-times").disabled = !generalRules.upstreamAvailable;
+      for (const id of connectionInputIDs) byId(id).disabled = !generalRules.connectionsAvailable;
       byId("general-rules-save").disabled = !generalRules.available;
     }
   });
