@@ -51,24 +51,28 @@ type credentialHashes struct {
 }
 
 type Handler struct {
-	basePath      string
-	enabled       bool
-	accounts      []credentialHashes
-	registry      *monitoring.Registry
-	penalties     PenaltySource
-	services      ServiceSources
-	assets        map[string][]byte
-	logs          logTail
-	debug         debugLog
-	cloudflare    cloudflareSource
-	general       generalRulesSource
-	upstream      upstreamSettingsSource
-	connections   connectionSettingsSource
-	generalFile   config.GeneralRulesFile
-	generalMu     sync.Mutex
-	certBlacklist CertificateBlacklist
-	certificates  CertificateService
-	testPages     []TestPage
+	basePath         string
+	enabled          bool
+	accounts         []credentialHashes
+	registry         *monitoring.Registry
+	penalties        PenaltySource
+	services         ServiceSources
+	assets           map[string][]byte
+	logs             logTail
+	debug            debugLog
+	cloudflare       cloudflareSource
+	general          generalRulesSource
+	bodyLimitCeiling int64
+	startup          config.Config
+	restart          func() error
+	restartPending   bool
+	upstream         upstreamSettingsSource
+	connections      connectionSettingsSource
+	generalFile      config.GeneralRulesFile
+	generalMu        sync.Mutex
+	certBlacklist    CertificateBlacklist
+	certificates     CertificateService
+	testPages        []TestPage
 }
 
 func New(cfg config.Config, registry *monitoring.Registry, penalties PenaltySource, logger *slog.Logger, services ...ServiceSources) (*Handler, error) {
@@ -87,6 +91,8 @@ func New(cfg config.Config, registry *monitoring.Registry, penalties PenaltySour
 	h.debug.dir = "log"
 	h.cloudflare, _ = penalties.(cloudflareSource)
 	h.general, _ = penalties.(generalRulesSource)
+	h.startup = cfg
+	h.bodyLimitCeiling = min(cfg.Firewall.MaxBufferedBytes-1, int64(1<<53-1))
 	h.generalFile.Path = config.OverrideYAML
 	h.generalFile.Store = cfg.Source
 	if cfg.Source != nil {
@@ -213,6 +219,9 @@ func (h *Handler) serve(c fiber.Ctx, requestPath string) error {
 	if requestPath == h.basePath+"/api/general-rules" {
 		return h.serveGeneralRules(c)
 	}
+	if requestPath == h.basePath+"/api/restart" {
+		return h.serveRestart(c)
+	}
 	if requestPath == h.basePath+"/api/certbot-blacklist" {
 		return h.serveCertificateBlacklist(c)
 	}
@@ -241,7 +250,7 @@ func (h *Handler) serve(c fiber.Ctx, requestPath string) error {
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid host search"})
 		}
-		return c.JSON(fiber.Map{"timestamp": time.Now().UTC(), "totals": h.registry.Totals(), "runtime": h.registry.Runtime(), "hosts": list.Hosts, "host_count": list.Total, "services": h.serviceStatus(), "disks": h.registry.Disks()})
+		return c.JSON(fiber.Map{"timestamp": time.Now().UTC(), "totals": h.registry.Totals(), "runtime": h.registry.Runtime(), "hosts": list.Hosts, "host_count": list.Total, "services": h.serviceStatus(), "disks": h.registry.Disks(), "restart": h.restartStatus()})
 	case h.basePath + "/api/logs":
 		result, err := h.logs.read(c.Query("cursor"))
 		if err != nil {

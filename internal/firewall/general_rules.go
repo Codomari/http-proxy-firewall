@@ -2,6 +2,7 @@ package firewall
 
 import (
 	"context"
+	"errors"
 	"net/netip"
 	"strings"
 
@@ -39,12 +40,18 @@ func (e *Engine) SetGeneralRules(settings config.GeneralRules) error {
 	if err != nil {
 		return err
 	}
+	if rules.settings.MaxBodyBytes >= e.budget.limit {
+		return errors.New("maximum request body size must be smaller than the shared inspection-buffer budget")
+	}
 	e.detector.mu.Lock()
 	e.detector.threshold = rules.settings.DDoSThreshold
 	e.general.Store(rules)
 	e.detector.mu.Unlock()
 	return nil
 }
+
+// MaxBodyBytes returns the active limit, including settings saved by the admin.
+func (e *Engine) MaxBodyBytes() int64 { return e.general.Load().settings.MaxBodyBytes }
 
 func (e *Engine) whitelistBypass(ctx context.Context, address netip.Addr) (matched, bypass bool) {
 	rules := e.general.Load()

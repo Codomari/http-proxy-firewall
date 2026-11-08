@@ -35,6 +35,7 @@ func New(cfg config.Config, options ...fx.Option) *fx.App {
 			proxy.New,
 			server.New),
 		fx.Invoke(registerLifecycle),
+		fx.Invoke(registerRestart),
 		fx.WithLogger(func(logger *slog.Logger) fxevent.Logger {
 			return &fxevent.SlogLogger{Logger: logger}
 		}),
@@ -42,6 +43,13 @@ func New(cfg config.Config, options ...fx.Option) *fx.App {
 		fx.StopTimeout(30 * time.Second),
 	}
 	return fx.New(append(base, options...)...)
+}
+
+// RestartExitCode is handled by main after every lifecycle stop hook completes.
+const RestartExitCode = 75
+
+func registerRestart(handler *admin.Handler, shutdown fx.Shutdowner) {
+	handler.SetRestartHandler(func() error { return shutdown.Shutdown(fx.ExitCode(RestartExitCode)) })
 }
 
 func newLogger(cfg config.Config) *slog.Logger {

@@ -83,10 +83,13 @@ func TestHTTP2NegotiationFirewallForwardingAndStreams(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _ = io.Copy(io.Discard, response.Body)
+	largeBody, _ := io.ReadAll(response.Body)
 	_ = response.Body.Close()
 	if response.StatusCode != 413 {
 		t.Fatalf("HTTP/2 bypassed streamed body limit: %d", response.StatusCode)
+	}
+	if !strings.Contains(string(largeBody), `<small>413</small>`) || !strings.Contains(string(largeBody), `id="status-language"`) || !strings.Contains(string(largeBody), "1 KiB") || response.Header.Get("Content-Type") != "text/html; charset=utf-8" {
+		t.Fatal("HTTP/2 lost the translated 413 page")
 	}
 	s.certGuard.mu.Lock()
 	s.certGuard.blacklist["blocked.example"] = time.Now().Add(time.Hour)

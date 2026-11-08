@@ -2,3 +2,7 @@
 /results/*
 !/results/v0.3.4/
 /results/v0.3.4/*.stdout.json
+
+# Recorded full benchmark for the 0.3.45 release.
+!/results/20261108T230101Z-v0.3.39-working-tree/
+/results/20261108T230101Z-v0.3.39-working-tree/*.stdout.json

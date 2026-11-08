@@ -40,6 +40,8 @@ func Load(args []string, output io.Writer) (Config, error) {
 		return Config{}, err
 	}
 	parsed.Source, parsed.environment = store, document.Environment()
+	parsed.arguments = append([]string(nil), args...)
+	parsed.processEnvironment = environment
 	return parsed, nil
 }
 
@@ -71,6 +73,12 @@ func Parse(args []string, values map[string]string, output io.Writer) (Config, e
 func fromEnvironment(values map[string]string) (Config, error) {
 	c := Defaults()
 	r := environment{values: values}
+	runtimeSettings, err := RuntimeFromValues(values)
+	if err != nil {
+		r.errs = append(r.errs, err)
+	} else {
+		c.Runtime = runtimeSettings
+	}
 	r.applyHTTP(&c.HTTP)
 	r.applyProxy(&c.Proxy)
 	r.applyTLS(&c.TLS)

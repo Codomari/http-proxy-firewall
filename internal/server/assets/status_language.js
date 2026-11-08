@@ -15,8 +15,8 @@
       const key = element.dataset.i18n;
       if (Object.prototype.hasOwnProperty.call(messages, key)) element.textContent = messages[key];
     });
-    const titleKey = page.dataset.page === "restart" ? "restart_title" : page.dataset.page === "tls-hostname" ? "tls_hostname_title" : "blocked_title";
-    document.title = (page.dataset.page === "restart" ? "" : "409 — ") + messages[titleKey];
+    const titleKey = page.dataset.page === "restart" ? "restart_title" : document.querySelector("h1[data-i18n]").dataset.i18n;
+    document.title = (page.dataset.page === "restart" ? "" : `${page.dataset.status} — `) + messages[titleKey];
     if (remember) {
       try { window.localStorage.setItem("pf-status-language", language); } catch (_) { /* Storage may be disabled. */ }
     }

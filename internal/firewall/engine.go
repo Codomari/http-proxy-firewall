@@ -31,6 +31,7 @@ type Intelligence interface {
 
 type Engine struct {
 	limits          cve2026109618.Limits
+	bodyLimitPage   func(fiber.Ctx, int64, bool) error
 	uploadNames     []string
 	trustedProxies  []netip.Prefix
 	general         atomic.Pointer[generalRules]

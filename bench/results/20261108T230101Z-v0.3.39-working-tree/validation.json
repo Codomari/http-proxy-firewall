@@ -1,0 +1,24 @@
+{
+  "completed_cases": 68,
+  "required_cases": 67,
+  "required_firewall_requests": 53864376,
+  "required_failed_requests": 0,
+  "all_measured_requests_including_backend_and_overload": 56764879,
+  "overload_requests": 1450387,
+  "overload_failed_requests": 1020520,
+  "overload_status_counts": {
+    "200": 429867,
+    "503": 1020520
+  },
+  "overload_admitted_rps": 28514.322489428327,
+  "firewall_cgroup_peak_mib": 635.296875,
+  "firewall_oom_killed": false,
+  "firewall_stats_samples": 2217,
+  "firewall_sample_peak_mib": 626.6,
+  "soak_rps": 65175.39936426713,
+  "soak_p99_ms": 26.2144,
+  "soak_sample_count": 120,
+  "soak_sample_memory_min_mib": 278.3,
+  "soak_sample_memory_max_mib": 294.7,
+  "soak_mean_cpu_percent": 195.05341666666666
+}

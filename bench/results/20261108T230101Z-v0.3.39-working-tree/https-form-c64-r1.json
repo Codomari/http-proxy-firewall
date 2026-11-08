@@ -1,0 +1,41 @@
+{
+  "timestamp_utc": "2026-11-08T23:12:43.357684013Z",
+  "target": "https://firewall:8443/bench",
+  "workload": "form",
+  "protocol": "HTTP/1.1",
+  "concurrency": 64,
+  "requested_duration_seconds": 15,
+  "elapsed_seconds": 15.000624049,
+  "warmup": {
+    "requests": 153072,
+    "challenges": 64,
+    "cookie_workers": 64,
+    "elapsed_seconds": 2.014950084
+  },
+  "require_challenge": true,
+  "configured_malicious_percent": 15,
+  "requests": 1048742,
+  "completed_responses": 1048742,
+  "failed_requests": 0,
+  "origin_responses": 1048742,
+  "measured_challenges": 0,
+  "requests_per_second": 69913.224714802,
+  "response_body_bytes": 1073911808,
+  "request_payload_bytes_attempted": 1132641360,
+  "response_body_bytes_per_second": 71591142.10795724,
+  "status_counts": {
+    "200": 1048742
+  },
+  "error_counts": {},
+  "workload_counts": {
+    "form": 1048742
+  },
+  "latency_all_requests": {
+    "p50_ms": 0.8192,
+    "p95_ms": 1.900544,
+    "p99_ms": 3.11296,
+    "mean_ms": 0.9149751889387475,
+    "max_ms": 8.106625
+  },
+  "success": true
+}

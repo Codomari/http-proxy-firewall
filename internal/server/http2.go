@@ -79,12 +79,14 @@ func (s *Server) handleHTTP2(conn net.Conn, writer http.ResponseWriter, request 
 	ctx.Request.Header.SetProtocol("HTTP/1.1")
 	size := int(request.ContentLength)
 	if int64(size) != request.ContentLength {
-		http.Error(writer, http.StatusText(413), 413)
-		return
+		c := s.app.AcquireCtx(ctx)
+		_ = s.serveRequestTooLarge(c, s.bodyLimit(), false)
+		s.app.ReleaseCtx(c)
+	} else {
+		ctx.Request.SetBodyStream(request.Body, size)
+		// Reuse the same firewall, admin, metrics, body budgets and proxy routes.
+		s.app.Server().Handler(ctx)
 	}
-	ctx.Request.SetBodyStream(request.Body, size)
-	// Reuse the same firewall, admin, metrics, body budgets and proxy routes.
-	s.app.Server().Handler(ctx)
 	response := &ctx.Response
 	response.Header.VisitAll(func(name, value []byte) {
 		switch strings.ToLower(string(name)) {

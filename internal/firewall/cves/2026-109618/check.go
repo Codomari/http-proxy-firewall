@@ -15,7 +15,7 @@ import (
 	"strings"
 )
 
-const DefaultMaxBodyBytes int64 = 32 << 20
+const DefaultMaxBodyBytes int64 = 200 << 20
 
 var (
 	ErrBodyTooLarge = errors.New("CVE-2026-109618: request body limit exceeded")

@@ -3,6 +3,7 @@ package admin
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"mime"
 
@@ -29,10 +30,12 @@ func (h *Handler) SetConnectionSettings(source connectionSettingsSource) { h.con
 
 type generalRulesSnapshot struct {
 	config.GeneralRules
-	Available                 bool     `json:"available"`
-	Overrides                 []string `json:"overrides"`
-	UpstreamAvailable         bool     `json:"upstream_available"`
-	ConnectionLimitsAvailable bool     `json:"connection_limits_available"`
+	MaxBodyBytesCeiling       int64           `json:"max_body_bytes_ceiling"`
+	Restart                   restartSnapshot `json:"restart"`
+	Available                 bool            `json:"available"`
+	Overrides                 []string        `json:"overrides"`
+	UpstreamAvailable         bool            `json:"upstream_available"`
+	ConnectionLimitsAvailable bool            `json:"connection_limits_available"`
 }
 
 func (h *Handler) generalRulesSnapshot() (generalRulesSnapshot, error) {
@@ -41,6 +44,8 @@ func (h *Handler) generalRulesSnapshot() (generalRulesSnapshot, error) {
 		return generalRulesSnapshot{}, err
 	}
 	result := generalRulesSnapshot{GeneralRules: rules, Available: h.general != nil, Overrides: h.generalFile.ProcessOverrides(), UpstreamAvailable: h.upstream != nil, ConnectionLimitsAvailable: h.connections != nil}
+	result.MaxBodyBytesCeiling = h.bodyLimitCeiling
+	result.Restart = h.restartStatusLocked()
 	return result, nil
 }
 
@@ -73,6 +78,9 @@ func (h *Handler) serveGeneralRules(c fiber.Ctx) error {
 			return c.Status(413).JSON(fiber.Map{"error": "Unable to read settings within the 64 KiB limit"})
 		}
 		var input struct {
+			MaxBodyBytes                   *int64   `json:"max_body_bytes"`
+			GCPercent                      *int     `json:"gc_percent"`
+			GCMemoryLimit                  *string  `json:"gc_memory_limit"`
 			WhitelistIPs                   []string `json:"whitelist_ips"`
 			WhitelistNetworks              []string `json:"whitelist_networks"`
 			AllowedCountries               []string `json:"allowed_countries"`
@@ -99,6 +107,20 @@ func (h *Handler) serveGeneralRules(c fiber.Ctx) error {
 			return c.Status(503).JSON(fiber.Map{"error": "Unable to read general settings YAML"})
 		}
 		retries := previous.UpstreamRequestRetryTimes
+		maxBodyBytes := previous.MaxBodyBytes
+		gcPercent, gcMemoryLimit := previous.GCPercent, previous.GCMemoryLimit
+		if input.GCPercent != nil {
+			gcPercent = *input.GCPercent
+		}
+		if input.GCMemoryLimit != nil {
+			gcMemoryLimit = *input.GCMemoryLimit
+		}
+		if input.MaxBodyBytes != nil {
+			maxBodyBytes = *input.MaxBodyBytes
+		}
+		if maxBodyBytes <= 0 || maxBodyBytes > h.bodyLimitCeiling {
+			return c.Status(400).JSON(fiber.Map{"error": fmt.Sprintf("Maximum request body size must be between 1 and %d bytes to fit the shared inspection-buffer budget", h.bodyLimitCeiling)})
+		}
 		limits := previous.ConnectionLimits
 		if input.MaxConcurrentRequests != nil || input.UpstreamMaxConnections != nil || input.UpstreamAllowOverflow != nil || input.UpstreamMaxOverflowConnections != nil {
 			if h.connections == nil {
@@ -123,7 +145,7 @@ func (h *Handler) serveGeneralRules(c fiber.Ctx) error {
 			}
 			retries = *input.UpstreamRequestRetryTimes
 		}
-		rules, err := (config.GeneralRules{ConnectionLimits: limits, WhitelistIPs: input.WhitelistIPs, WhitelistNetworks: input.WhitelistNetworks, AllowedCountries: input.AllowedCountries, IPCheckpoint: *input.IPCheckpoint, CountryCheckpoint: *input.CountryCheckpoint, DDoSThreshold: *input.DDoSThreshold, UpstreamRequestRetryTimes: retries}).Normalize()
+		rules, err := (config.GeneralRules{ConnectionLimits: limits, MaxBodyBytes: maxBodyBytes, GCPercent: gcPercent, GCMemoryLimit: gcMemoryLimit, WhitelistIPs: input.WhitelistIPs, WhitelistNetworks: input.WhitelistNetworks, AllowedCountries: input.AllowedCountries, IPCheckpoint: *input.IPCheckpoint, CountryCheckpoint: *input.CountryCheckpoint, DDoSThreshold: *input.DDoSThreshold, UpstreamRequestRetryTimes: retries}).Normalize()
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 		}

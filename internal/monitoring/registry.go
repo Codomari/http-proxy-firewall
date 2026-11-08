@@ -5,6 +5,7 @@ package monitoring
 import (
 	"errors"
 	"runtime"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
@@ -49,6 +50,8 @@ type RuntimeSnapshot struct {
 	SystemBytes        uint64  `json:"system_bytes"`
 	GCCount            uint32  `json:"gc_count"`
 	GCPauseTotalNS     uint64  `json:"gc_pause_total_ns"`
+	GCHeapGoalBytes    uint64  `json:"gc_heap_goal_bytes"`
+	GCMemoryLimitBytes int64   `json:"gc_memory_limit_bytes"`
 	CPUCount           int     `json:"cpu_count"`
 	GOMAXPROCS         int     `json:"gomaxprocs"`
 }
@@ -203,6 +206,7 @@ func (r *Registry) Runtime() RuntimeSnapshot {
 		HeapAllocatedBytes: memory.HeapAlloc, HeapInUseBytes: memory.HeapInuse,
 		StackBytes: memory.StackInuse, SystemBytes: memory.Sys,
 		GCCount: memory.NumGC, GCPauseTotalNS: memory.PauseTotalNs,
+		GCHeapGoalBytes: memory.NextGC, GCMemoryLimitBytes: debug.SetMemoryLimit(-1),
 		CPUCount: runtime.NumCPU(), GOMAXPROCS: runtime.GOMAXPROCS(0),
 	}
 }

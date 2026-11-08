@@ -1,0 +1,13 @@
+{
+  "announced_body_bytes": 209715201,
+  "request_body_prefix_bytes_sent": 8192,
+  "status": 413,
+  "html_content_type": true,
+  "language_options": 11,
+  "message_limit": "200 MiB",
+  "source_hashes_verified": 160,
+  "source_files_changed_after_measurement": [],
+  "private_override_absent_in_container": true,
+  "compiler": "go1.27.3 linux/arm64",
+  "truncated_request_without_body_status": 400
+}

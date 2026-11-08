@@ -1,0 +1,8 @@
+HTTP/1.1 400 Bad Request
+Server: codomari/proxy-firewall/0.3.39
+Date: Sun, 08 Nov 2026 23:22:07 GMT
+Content-Type: text/plain; charset=utf-8
+Content-Length: 11
+Connection: close
+
+Bad Request

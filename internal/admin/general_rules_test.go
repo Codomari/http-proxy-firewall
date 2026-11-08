@@ -56,8 +56,9 @@ func TestGeneralRulesAPIAuthenticationValidationPersistenceAndRuntime(t *testing
 	h.SetConnectionSettings(source)
 	app := fiber.New(fiber.Config{StreamRequestBody: true})
 	h.Mount(app)
-	settings := config.GeneralRules{ConnectionLimits: config.ConnectionLimitsFromConfig(cfg), WhitelistIPs: []string{"203.0.113.8"}, WhitelistNetworks: []string{"203.0.113.8/24"}, AllowedCountries: []string{"Azerbaijan", "Turkey"}, IPCheckpoint: true, CountryCheckpoint: false, DDoSThreshold: 350, UpstreamRequestRetryTimes: 5}
+	settings := config.GeneralRules{MaxBodyBytes: cfg.Firewall.MaxBodyBytes, GCPercent: 100, GCMemoryLimit: "off", ConnectionLimits: config.ConnectionLimitsFromConfig(cfg), WhitelistIPs: []string{"203.0.113.8"}, WhitelistNetworks: []string{"203.0.113.8/24"}, AllowedCountries: []string{"Azerbaijan", "Turkey"}, IPCheckpoint: true, CountryCheckpoint: false, DDoSThreshold: 350, UpstreamRequestRetryTimes: 5}
 	settings.ConnectionLimits = config.ConnectionLimits{MaxConcurrentRequests: 8, UpstreamMaxConnections: 2, UpstreamAllowOverflow: true, UpstreamMaxOverflowConnections: 4}
+	settings.MaxBodyBytes, settings.GCPercent, settings.GCMemoryLimit = 128<<20, 50, "512MiB"
 	payload, _ := json.Marshal(settings)
 	call := func(method, body, site, media string, auth, csrf bool) (int, []byte) {
 		t.Helper()
@@ -94,6 +95,12 @@ func TestGeneralRulesAPIAuthenticationValidationPersistenceAndRuntime(t *testing
 		{"POST", string(payload), "cross-site", "application/json", true, true, 403},
 		{"POST", string(payload), "", "text/plain", true, true, 415},
 		{"POST", `{}`, "", "application/json", true, true, 400},
+		{"POST", strings.Replace(string(payload), `"max_body_bytes":134217728`, `"max_body_bytes":0`, 1), "", "application/json", true, true, 400},
+		{"POST", strings.Replace(string(payload), `"max_body_bytes":134217728`, `"max_body_bytes":-1`, 1), "", "application/json", true, true, 400},
+		{"POST", strings.Replace(string(payload), `"max_body_bytes":134217728`, `"max_body_bytes":1.5`, 1), "", "application/json", true, true, 400},
+		{"POST", strings.Replace(string(payload), `"max_body_bytes":134217728`, `"max_body_bytes":268435456`, 1), "", "application/json", true, true, 400},
+		{"POST", strings.Replace(string(payload), `"gc_percent":50`, `"gc_percent":-2`, 1), "", "application/json", true, true, 400},
+		{"POST", strings.Replace(string(payload), `"gc_memory_limit":"512MiB"`, `"gc_memory_limit":"1.5GiB"`, 1), "", "application/json", true, true, 400},
 		{"POST", string(payload) + "{}", "", "application/json", true, true, 400},
 		{"POST", strings.Replace(string(payload), `"ddos_threshold":350`, `"ddos_threshold":0`, 1), "", "application/json", true, true, 400},
 		{"POST", strings.Replace(string(payload), `"ddos_threshold":350`, `"ddos_threshold":1.5`, 1), "", "application/json", true, true, 400},
@@ -131,6 +138,9 @@ func TestGeneralRulesAPIAuthenticationValidationPersistenceAndRuntime(t *testing
 		t.Fatalf("save failed: %d %s", status, data)
 	}
 	want, _ := settings.Normalize()
+	if !loaded.Restart.Required {
+		t.Fatal("GC edit did not flag a restart")
+	}
 	if source.saves != 1 || source.retries != 5 || source.limits != settings.ConnectionLimits || !reflect.DeepEqual(source.settings, want) || !reflect.DeepEqual(loaded.GeneralRules, want) {
 		t.Fatal("saved settings were not applied immediately")
 	}
@@ -142,13 +152,13 @@ func TestGeneralRulesAPIAuthenticationValidationPersistenceAndRuntime(t *testing
 	// Clients predating the retry control must preserve its saved value.
 	var legacy map[string]any
 	json.Unmarshal(payload, &legacy)
-	for _, key := range []string{"upstream_request_retry_times", "max_concurrent_requests", "upstream_max_connections", "upstream_allow_overflow", "upstream_max_overflow_connections"} {
+	for _, key := range []string{"max_body_bytes", "gc_percent", "gc_memory_limit", "upstream_request_retry_times", "max_concurrent_requests", "upstream_max_connections", "upstream_allow_overflow", "upstream_max_overflow_connections"} {
 		delete(legacy, key)
 	}
 	legacyData, _ := json.Marshal(legacy)
 	legacyPayload := string(legacyData)
 	status, _ = call("POST", legacyPayload, "same-origin", "application/json", true, true)
-	if status != 200 || source.retries != 5 || source.limits != settings.ConnectionLimits {
+	if status != 200 || source.retries != 5 || source.limits != settings.ConnectionLimits || source.settings.MaxBodyBytes != settings.MaxBodyBytes || source.settings.GCMemoryLimit != settings.GCMemoryLimit || source.settings.GCPercent != settings.GCPercent {
 		t.Fatal("legacy save reset the retry setting")
 	}
 	status, data = call("POST", strings.Replace(string(payload), `"upstream_request_retry_times":5`, `"upstream_request_retry_times":0`, 1), "same-origin", "application/json", true, true)

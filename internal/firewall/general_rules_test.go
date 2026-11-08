@@ -27,7 +27,7 @@ func TestWhitelistCheckpointSwitchesAndRulePriority(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := testEngine(t, testConfig(), fakeIntelligence{country: "Turkey"})
-			rules := config.GeneralRules{ConnectionLimits: config.ConnectionLimitsFromConfig(config.Defaults()), IPCheckpoint: tc.ipCheckpoint, CountryCheckpoint: tc.countryCheckpoint, DDoSThreshold: 200}
+			rules := config.GeneralRules{MaxBodyBytes: testConfig().Firewall.MaxBodyBytes, GCPercent: 100, GCMemoryLimit: "off", ConnectionLimits: config.ConnectionLimitsFromConfig(config.Defaults()), IPCheckpoint: tc.ipCheckpoint, CountryCheckpoint: tc.countryCheckpoint, DDoSThreshold: 200}
 			if tc.ipMatch {
 				rules.WhitelistIPs = []string{"198.51.100.1"}
 			}
@@ -73,7 +73,7 @@ func TestGeneralRulesPublishAtomicallyDuringRequests(t *testing.T) {
 		wg.Go(func() {
 			for i := range 100 {
 				if worker == 0 {
-					if err := e.SetGeneralRules(config.GeneralRules{ConnectionLimits: config.ConnectionLimitsFromConfig(config.Defaults()), WhitelistIPs: []string{"198.51.100.1"}, IPCheckpoint: i%2 == 0, DDoSThreshold: uint64(i + 1)}); err != nil {
+					if err := e.SetGeneralRules(config.GeneralRules{MaxBodyBytes: testConfig().Firewall.MaxBodyBytes, GCPercent: 100, GCMemoryLimit: "off", ConnectionLimits: config.ConnectionLimitsFromConfig(config.Defaults()), WhitelistIPs: []string{"198.51.100.1"}, IPCheckpoint: i%2 == 0, DDoSThreshold: uint64(i + 1)}); err != nil {
 						t.Error(err)
 					}
 				} else {
@@ -88,7 +88,7 @@ func TestGeneralRulesPublishAtomicallyDuringRequests(t *testing.T) {
 
 func TestDDoSThresholdUpdatesWithoutResettingActivePenalty(t *testing.T) {
 	e := testEngine(t, testConfig(), nil)
-	settings := config.GeneralRules{ConnectionLimits: config.ConnectionLimitsFromConfig(config.Defaults()), DDoSThreshold: 1, IPCheckpoint: true, CountryCheckpoint: true}
+	settings := config.GeneralRules{MaxBodyBytes: testConfig().Firewall.MaxBodyBytes, GCPercent: 100, GCMemoryLimit: "off", ConnectionLimits: config.ConnectionLimitsFromConfig(config.Defaults()), DDoSThreshold: 1, IPCheckpoint: true, CountryCheckpoint: true}
 	if err := e.SetGeneralRules(settings); err != nil {
 		t.Fatal(err)
 	}

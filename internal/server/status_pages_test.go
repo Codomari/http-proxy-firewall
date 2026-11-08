@@ -53,7 +53,7 @@ func TestStatusPagesEmbedAllLanguagesAndGame(t *testing.T) {
 			if !strings.Contains(page.tlsHostnameRequired, messages.TLSHostnameTitle) || !strings.Contains(page.tlsHostnameRequired, messages.TLSHostnameMessage) {
 				t.Fatal("TLS hostname translations missing")
 			}
-			for _, body := range []string{page.restarting, page.blacklisted, page.tlsHostnameRequired} {
+			for _, body := range []string{page.restarting, page.blacklisted, page.tlsHostnameRequired, page.requestTooLarge, page.inputTooLarge} {
 				if !strings.Contains(body, `id="status-language"`) || strings.Count(body, "<option value=") != 11 || !strings.Contains(body, statusLanguageJS) || !strings.Contains(body, statusLanguageCSS) {
 					t.Fatal("embedded language selector missing")
 				}

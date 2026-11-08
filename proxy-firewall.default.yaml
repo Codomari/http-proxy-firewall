@@ -1,5 +1,12 @@
 # Public defaults. Put deployment values in the ignored override YAML.
 env:
+  # Heap growth target between GC cycles; lower values collect more often.
+  - key: GOGC
+    value: "100"
+  # Soft Go memory target: bytes or B/KiB/MiB/GiB/TiB; off keeps Go's default.
+  # Changes to either GC setting require an application restart.
+  - key: GOMEMLIMIT
+    value: "off"
   - key: MAXMIND_LICENSE_KEY
     value: ""
   - key: MAXMIND_DATABASE_PATH
@@ -60,7 +67,7 @@ env:
   - key: PF_CACHE_CAPACITY
     value: "100000"
   - key: CVE_MITIGATOR_MAX_BODY_BYTES
-    value: "33554432"
+    value: "209715200"
   - key: PF_MAX_BUFFERED_BYTES
     value: "268435456"
   - key: CVE_MITIGATOR_UPLOAD_PROGRESS_NAMES

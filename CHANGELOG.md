@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.45 — 2026-11-08
+
+Six user-facing changes since 0.3.39, following the project's patch-count convention.
+
+### Changed
+
+- Group Rules parameters under Request Limits, DDoS Protection, Upstream and Garbage Collection, keeping the whitelist lists at the top.
+- Raise the default request-body limit to 200 MiB and make it editable in Admin → Rules → General settings, with immediate application to new uploads.
+- Add a 413 Request Entity Too Large page matching the 409 design, with 11 languages, a remembered language selector, the applied size limit, and an authenticated TEST PAGES preview. Explain form field/file limits separately.
+- Add YAML and admin controls for GOGC and GOMEMLIMIT, applying validated GC settings on startup and showing the current memory target and next heap goal in Monitoring.
+- Show Restart app beside Refresh now only for pending startup configuration changes. Revalidate before restarting, drain requests, and replace the process with fresh YAML; unnecessary restart requests leave the app running.
+- Refresh admin monitoring, logs, rules, certificates and debug views every five seconds.
+
+### Validation
+
+- Run the complete 68-case Docker benchmark with the 200 MiB limit: all 67 standard cases passed, covering 53,864,376 firewall requests with zero failed requests. The deliberate 4,096-client overload case returned 429,867 successful responses and 1,020,520 HTTP 503 responses. The 60-second soak sustained 65,175 requests/sec with 26.2 ms p99 latency; firewall cgroup peak was 635.3 MiB of 1 GiB with no OOM kill. See [BENCHMARKS.md](BENCHMARKS.md) for the report and raw evidence.
+
 ## 0.3.39 — 2026-11-06
 
 Six user-facing changes since 0.3.33, following the project's patch-count convention.

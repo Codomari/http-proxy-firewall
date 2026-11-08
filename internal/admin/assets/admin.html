@@ -12,8 +12,8 @@
 <body>
   <main class="shell">
     <header class="page-header">
-      <div><p class="eyebrow">Codomari</p><h1>Proxy-Firewall <span class="release-version">· __PF_VERSION__</span></h1><p class="subtitle">Host activity and process health, refreshed every 2 seconds.</p></div>
-      <div class="live-controls"><span id="connection" class="status connecting" role="status">Connecting</span><button id="refresh" type="button">Refresh now</button></div>
+      <div><p class="eyebrow">Codomari</p><h1>Proxy-Firewall <span class="release-version">· __PF_VERSION__</span></h1><p class="subtitle">Host activity and process health, refreshed every 5 seconds.</p></div>
+      <div class="live-controls"><span id="connection" class="status connecting" role="status">Connecting</span><button id="refresh" type="button">Refresh now</button><button id="restart-app" type="button" hidden>Restart app</button><span id="restart-status" class="detail" role="status" hidden></span></div>
     </header>
     <div id="error" class="error" role="alert" hidden></div>
     <div class="dashboard-tabs" role="tablist" aria-label="Dashboard views">
@@ -65,7 +65,7 @@
     <div id="view-logs" role="tabpanel" aria-labelledby="tab-logs" tabindex="0" hidden>
     <section class="panel logs-panel" aria-labelledby="logs-title">
       <div class="panel-header"><div><h2 id="logs-title">Service logs</h2><p id="log-status" class="detail" role="status">Latest 100 lines · keeps up to 10,000 lines while open</p></div><button id="show-logs" type="button" aria-expanded="false" aria-controls="log-content">Show logs</button></div>
-      <div id="log-content" hidden><pre id="log-lines" class="log-lines" tabindex="0" aria-label="Service log lines"></pre><p class="log-note detail">Updates every 2 seconds. Scroll to the bottom to follow new lines. Lines over 4 KiB are truncated.</p></div>
+      <div id="log-content" hidden><pre id="log-lines" class="log-lines" tabindex="0" aria-label="Service log lines"></pre><p class="log-note detail">Updates every 5 seconds. Scroll to the bottom to follow new lines. Lines over 4 KiB are truncated.</p></div>
     </section>
     </div>
     <div id="view-test-pages" role="tabpanel" aria-labelledby="tab-test-pages" tabindex="0" hidden>
@@ -100,66 +100,109 @@
           </span></div>
           <textarea id="allowed-countries" rows="4" maxlength="8192" placeholder="Azerbaijan&#10;Turkey" spellcheck="false" aria-describedby="allowed-countries-hint"></textarea>
         </div>
-        <div class="rule-field search-label">
-          <div class="field-label"><label for="ddos-threshold">DDoS threshold (requests/second per hostname)</label><span class="field-hint">
-            <button type="button" class="hint-button" aria-label="About DDoS threshold (requests/second per hostname)" aria-describedby="ddos-threshold-hint">i</button>
-            <span id="ddos-threshold-hint" class="hint-text" role="tooltip">Average request rate over the sampling window. Changes apply immediately; existing penalties keep their expiry.</span>
-          </span></div>
-          <input id="ddos-threshold" type="number" min="1" max="1000000000" step="1" value="200" aria-describedby="ddos-threshold-hint" required>
-        </div>
-        <div class="rule-field search-label">
-          <div class="field-label"><label for="upstream-request-retry-times">Upstream request retries</label><span class="field-hint">
-            <button type="button" class="hint-button" aria-label="About upstream request retries" aria-describedby="upstream-request-retry-times-hint">i</button>
-            <span id="upstream-request-retry-times-hint" class="hint-text" role="tooltip">Additional retries after a closed upstream connection, for GET/HEAD requests without a body. Default: 3. Set 0 to disable. Saving applies immediately to all upstream routes.</span>
-          </span></div>
-          <input id="upstream-request-retry-times" type="number" min="0" step="1" value="3" aria-describedby="upstream-request-retry-times-hint" required>
-        </div>
-        <div class="rule-field search-label">
-          <div class="field-label"><label for="max-concurrent-requests">Concurrent request handlers</label><span class="field-hint">
-            <button type="button" class="hint-button" aria-label="About concurrent request handlers" aria-describedby="max-concurrent-requests-hint">i</button>
-            <span id="max-concurrent-requests-hint" class="hint-text" role="tooltip">Global request-processing limit. Response streams and tunnels also count against their upstream connection limit until they finish.</span>
-          </span></div>
-          <input id="max-concurrent-requests" type="number" min="1" step="1" value="256" aria-describedby="max-concurrent-requests-hint" required>
-        </div>
-        <div class="rule-field search-label">
-          <div class="field-label"><label for="upstream-max-connections">Normal upstream connections</label><span class="field-hint">
-            <button type="button" class="hint-button" aria-label="About normal upstream connections" aria-describedby="upstream-max-connections-hint">i</button>
-            <span id="upstream-max-connections-hint" class="hint-text" role="tooltip">Normal reusable capacity for each upstream pool. Lower limits let existing requests finish.</span>
-          </span></div>
-          <input id="upstream-max-connections" type="number" min="1" step="1" value="256" aria-describedby="upstream-max-connections-hint" required>
-        </div>
-        <fieldset class="upstream-burst-settings">
-          <legend class="legend-with-hint">Upstream burst capacity<span class="field-hint">
-            <button type="button" class="hint-button" aria-label="About upstream burst capacity" aria-describedby="upstream-burst-hint">i</button>
-            <span id="upstream-burst-hint" class="hint-text" role="tooltip">Absolute total ceiling, including normal connections. Must be at least the normal limit when enabled. Overflow connections close when the response finishes; normal keepalive connections remain reusable.</span>
-          </span></legend>
-          <div class="burst-controls">
-            <div class="field-label"><label class="checkpoint-option" for="upstream-allow-overflow"><input id="upstream-allow-overflow" type="checkbox" aria-describedby="upstream-allow-overflow-hint">Allow temporary overflow connections</label><span class="field-hint">
-              <button type="button" class="hint-button" aria-label="About temporary overflow connections" aria-describedby="upstream-allow-overflow-hint">i</button>
-              <span id="upstream-allow-overflow-hint" class="hint-text" role="tooltip">Create temporary connections above the normal limit as needed, up to the burst ceiling. They close when the response finishes.</span>
-            </span></div>
+        <fieldset id="request-limits-settings" class="settings-group">
+          <legend>Request Limits</legend>
+          <div class="settings-fields settings-fields-two">
             <div class="rule-field search-label">
-              <div class="field-label"><label for="upstream-max-overflow-connections">Maximum connections during a burst</label><span class="field-hint">
-                <button type="button" class="hint-button" aria-label="About maximum connections during a burst" aria-describedby="upstream-max-overflow-connections-hint">i</button>
-                <span id="upstream-max-overflow-connections-hint" class="hint-text" role="tooltip">Absolute total ceiling, including normal connections. Must be at least the normal limit when enabled.</span>
+              <div class="field-label"><label for="max-body-mib">Maximum request body (MiB)</label><span class="field-hint">
+                <button type="button" class="hint-button" aria-label="About maximum request body size" aria-describedby="max-body-mib-hint">i</button>
+                <span id="max-body-mib-hint" class="hint-text" role="tooltip">Maximum total size of an upload or form, including all files and form data. Default: 200 MiB (209,715,200 bytes). Saving applies immediately to new uploads. The size must fit within the shared inspection-buffer budget. Larger requests receive a translated 413 page.</span>
               </span></div>
-              <input id="upstream-max-overflow-connections" type="number" min="0" step="1" value="512" aria-describedby="upstream-max-overflow-connections-hint" required>
+              <input id="max-body-mib" type="number" min="0" step="any" value="200" aria-describedby="max-body-mib-hint" required>
+            </div>
+            <div class="rule-field search-label">
+              <div class="field-label"><label for="max-concurrent-requests">Concurrent request handlers</label><span class="field-hint">
+                <button type="button" class="hint-button" aria-label="About concurrent request handlers" aria-describedby="max-concurrent-requests-hint">i</button>
+                <span id="max-concurrent-requests-hint" class="hint-text" role="tooltip">Global request-processing limit. Response streams and tunnels also count against their upstream connection limit until they finish.</span>
+              </span></div>
+              <input id="max-concurrent-requests" type="number" min="1" step="1" value="256" aria-describedby="max-concurrent-requests-hint" required>
             </div>
           </div>
         </fieldset>
-        <fieldset aria-describedby="cookie-checkpoint-hint">
-          <legend class="legend-with-hint">Cookie checkpoint for whitelisted clients<span class="field-hint">
-            <button type="button" class="hint-button" aria-label="About cookie checkpoints for whitelisted clients" aria-describedby="cookie-checkpoint-hint">i</button>
-            <span id="cookie-checkpoint-hint" class="hint-text" role="tooltip">Applies when the hostname is under a DDoS penalty. CVE/body validation and bot-query rules always apply. If both lists match, an enabled checkpoint takes priority. Static-file exemptions continue to apply.</span>
-          </span></legend>
-          <div class="field-label"><label class="checkpoint-option" for="ip-checkpoint"><input id="ip-checkpoint" type="checkbox" aria-describedby="ip-checkpoint-hint" checked>Apply cookie checkpoint to whitelisted IPs and networks</label><span class="field-hint">
-            <button type="button" class="hint-button" aria-label="About cookie checkpoints for whitelisted IPs and networks" aria-describedby="ip-checkpoint-hint">i</button>
-            <span id="ip-checkpoint-hint" class="hint-text" role="tooltip">Apply the cookie checkpoint to whitelisted IPs and networks when the hostname is under a DDoS penalty. Static-file exemptions continue to apply.</span>
-          </span></div>
-          <div class="field-label"><label class="checkpoint-option" for="country-checkpoint"><input id="country-checkpoint" type="checkbox" aria-describedby="country-checkpoint-hint" checked>Apply cookie checkpoint to whitelisted countries</label><span class="field-hint">
-            <button type="button" class="hint-button" aria-label="About cookie checkpoints for whitelisted countries" aria-describedby="country-checkpoint-hint">i</button>
-            <span id="country-checkpoint-hint" class="hint-text" role="tooltip">Apply the cookie checkpoint to whitelisted countries when the hostname is under a DDoS penalty. Static-file exemptions continue to apply.</span>
-          </span></div>
+        <fieldset id="ddos-protection-settings" class="settings-group">
+          <legend>DDoS Protection</legend>
+          <div class="settings-fields">
+            <div class="rule-field search-label">
+              <div class="field-label"><label for="ddos-threshold">DDoS threshold (requests/second per hostname)</label><span class="field-hint">
+                <button type="button" class="hint-button" aria-label="About DDoS threshold (requests/second per hostname)" aria-describedby="ddos-threshold-hint">i</button>
+                <span id="ddos-threshold-hint" class="hint-text" role="tooltip">Average request rate over the sampling window. Changes apply immediately; existing penalties keep their expiry.</span>
+              </span></div>
+              <input id="ddos-threshold" type="number" min="1" max="1000000000" step="1" value="200" aria-describedby="ddos-threshold-hint" required>
+            </div>
+            <fieldset class="checkpoint-settings" aria-describedby="cookie-checkpoint-hint">
+              <legend class="legend-with-hint">Cookie checkpoint for whitelisted clients<span class="field-hint">
+                <button type="button" class="hint-button" aria-label="About cookie checkpoints for whitelisted clients" aria-describedby="cookie-checkpoint-hint">i</button>
+                <span id="cookie-checkpoint-hint" class="hint-text" role="tooltip">Applies when the hostname is under a DDoS penalty. CVE/body validation and bot-query rules always apply. If both lists match, an enabled checkpoint takes priority. Static-file exemptions continue to apply.</span>
+              </span></legend>
+              <div class="field-label"><label class="checkpoint-option" for="ip-checkpoint"><input id="ip-checkpoint" type="checkbox" aria-describedby="ip-checkpoint-hint" checked>Apply cookie checkpoint to whitelisted IPs and networks</label><span class="field-hint">
+                <button type="button" class="hint-button" aria-label="About cookie checkpoints for whitelisted IPs and networks" aria-describedby="ip-checkpoint-hint">i</button>
+                <span id="ip-checkpoint-hint" class="hint-text" role="tooltip">Apply the cookie checkpoint to whitelisted IPs and networks when the hostname is under a DDoS penalty. Static-file exemptions continue to apply.</span>
+              </span></div>
+              <div class="field-label"><label class="checkpoint-option" for="country-checkpoint"><input id="country-checkpoint" type="checkbox" aria-describedby="country-checkpoint-hint" checked>Apply cookie checkpoint to whitelisted countries</label><span class="field-hint">
+                <button type="button" class="hint-button" aria-label="About cookie checkpoints for whitelisted countries" aria-describedby="country-checkpoint-hint">i</button>
+                <span id="country-checkpoint-hint" class="hint-text" role="tooltip">Apply the cookie checkpoint to whitelisted countries when the hostname is under a DDoS penalty. Static-file exemptions continue to apply.</span>
+              </span></div>
+            </fieldset>
+          </div>
+        </fieldset>
+        <fieldset id="upstream-settings" class="settings-group">
+          <legend>Upstream</legend>
+          <div class="settings-fields">
+            <div class="settings-stack">
+              <div class="rule-field search-label">
+                <div class="field-label"><label for="upstream-max-connections">Normal upstream connections</label><span class="field-hint">
+                  <button type="button" class="hint-button" aria-label="About normal upstream connections" aria-describedby="upstream-max-connections-hint">i</button>
+                  <span id="upstream-max-connections-hint" class="hint-text" role="tooltip">Normal reusable capacity for each upstream pool. Lower limits let existing requests finish.</span>
+                </span></div>
+                <input id="upstream-max-connections" type="number" min="1" step="1" value="256" aria-describedby="upstream-max-connections-hint" required>
+              </div>
+              <div class="rule-field search-label">
+                <div class="field-label"><label for="upstream-request-retry-times">Upstream request retries</label><span class="field-hint">
+                  <button type="button" class="hint-button" aria-label="About upstream request retries" aria-describedby="upstream-request-retry-times-hint">i</button>
+                  <span id="upstream-request-retry-times-hint" class="hint-text" role="tooltip">Additional retries after a closed upstream connection, for GET/HEAD requests without a body. Default: 3. Set 0 to disable. Saving applies immediately to all upstream routes.</span>
+                </span></div>
+                <input id="upstream-request-retry-times" type="number" min="0" step="1" value="3" aria-describedby="upstream-request-retry-times-hint" required>
+              </div>
+            </div>
+            <fieldset class="upstream-burst-settings">
+              <legend class="legend-with-hint">Upstream burst capacity<span class="field-hint">
+                <button type="button" class="hint-button" aria-label="About upstream burst capacity" aria-describedby="upstream-burst-hint">i</button>
+                <span id="upstream-burst-hint" class="hint-text" role="tooltip">Absolute total ceiling, including normal connections. Must be at least the normal limit when enabled. Overflow connections close when the response finishes; normal keepalive connections remain reusable.</span>
+              </span></legend>
+              <div class="burst-controls">
+                <div class="field-label"><label class="checkpoint-option" for="upstream-allow-overflow"><input id="upstream-allow-overflow" type="checkbox" aria-describedby="upstream-allow-overflow-hint">Allow temporary overflow connections</label><span class="field-hint">
+                  <button type="button" class="hint-button" aria-label="About temporary overflow connections" aria-describedby="upstream-allow-overflow-hint">i</button>
+                  <span id="upstream-allow-overflow-hint" class="hint-text" role="tooltip">Create temporary connections above the normal limit as needed, up to the burst ceiling. They close when the response finishes.</span>
+                </span></div>
+                <div class="rule-field search-label">
+                  <div class="field-label"><label for="upstream-max-overflow-connections">Maximum connections during a burst</label><span class="field-hint">
+                    <button type="button" class="hint-button" aria-label="About maximum connections during a burst" aria-describedby="upstream-max-overflow-connections-hint">i</button>
+                    <span id="upstream-max-overflow-connections-hint" class="hint-text" role="tooltip">Absolute total ceiling, including normal connections. Must be at least the normal limit when enabled.</span>
+                  </span></div>
+                  <input id="upstream-max-overflow-connections" type="number" min="0" step="1" value="512" aria-describedby="upstream-max-overflow-connections-hint" required>
+                </div>
+              </div>
+            </fieldset>
+          </div>
+        </fieldset>
+        <fieldset id="garbage-collection-settings" class="settings-group">
+          <legend>Garbage Collection</legend>
+          <div class="settings-fields settings-fields-two">
+            <div class="rule-field search-label">
+              <div class="field-label"><label for="gc-percent">GC heap growth target (%)</label><span class="field-hint">
+                <button type="button" class="hint-button" aria-label="About GC heap growth target" aria-describedby="gc-percent-hint">i</button>
+                <span id="gc-percent-hint" class="hint-text" role="tooltip">GOGC controls heap growth between collections. Default: 100. Lower values collect more often; -1 disables growth-triggered collection. A configured memory target still triggers collection. Saving requires a restart.</span>
+              </span></div>
+              <input id="gc-percent" type="number" min="-1" step="1" value="100" aria-describedby="gc-percent-hint" required>
+            </div>
+            <div class="rule-field search-label">
+              <div class="field-label"><label for="gc-memory-limit">GC memory target</label><span class="field-hint">
+                <button type="button" class="hint-button" aria-label="About GC memory target" aria-describedby="gc-memory-limit-hint">i</button>
+                <span id="gc-memory-limit-hint" class="hint-text" role="tooltip">GOMEMLIMIT sets a soft target for Go-managed memory, including the heap and runtime overhead. Use a positive byte count, 512MiB, 1GiB, or off. It adjusts collection timing and is not a hard process RAM cap. Saving requires a restart.</span>
+              </span></div>
+              <input id="gc-memory-limit" type="text" value="off" maxlength="32" spellcheck="false" aria-describedby="gc-memory-limit-hint" required>
+            </div>
+          </div>
         </fieldset>
         <div class="general-rules-actions"><button id="general-rules-save" type="submit" disabled>Save general settings</button><span id="general-rules-feedback" class="detail" role="status"></span></div>
       </form>
@@ -198,7 +241,7 @@
       <div id="debug-error" class="error debug-error" role="alert" hidden></div>
       <div id="debug-scroll" class="table-scroll debug-table-scroll" tabindex="0" aria-label="Debug requests"><table class="debug-table"><thead><tr><th scope="col">Time (UTC)</th><th scope="col">Client IP</th><th scope="col">Hostname</th><th scope="col">Method</th><th scope="col">URL</th><th scope="col">Duration</th><th scope="col">Status</th><th scope="col">Request received</th><th scope="col">Response sent</th></tr></thead><tbody id="debug-rows"></tbody></table></div>
       <p id="debug-empty" class="log-note detail">Enable a capture rule to see matching requests.</p>
-      <p id="debug-status" class="log-note detail" role="status">Pulls matching requests every 2 seconds · latest 100 initially · retains up to 10,000 rows</p>
+      <p id="debug-status" class="log-note detail" role="status">Pulls matching requests every 5 seconds · latest 100 initially · retains up to 10,000 rows</p>
     </section>
     </div>
     <div id="view-certbot" role="tabpanel" aria-labelledby="tab-certbot" tabindex="0" hidden>

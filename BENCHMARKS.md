@@ -1,5 +1,18 @@
 # Codomari Proxy-Firewall benchmarks
 
+## Latest run: changes released in 0.3.45
+
+The complete Docker benchmark ran on **2026-11-08** against the working tree containing the 200 MiB limit, GC controls, conditional restart and grouped Rules controls. The measured binaries still reported **0.3.39** because the release version was bumped after measurement; this is recorded in the source hashes and run metadata.
+
+**68 cases completed. All 67 standard cases passed with zero failures**, including **53,864,376 firewall requests**. The deliberate 4,096-client overload run recorded **429,867 HTTP 200** and **1,020,520 HTTP 503** responses. Firewall resources were limited to **2 CPUs and 1 GiB RAM**. The 60-second soak sustained **65,175 requests/sec** with **26.2 ms p99 latency**; peak cgroup memory across the complete run, including overload, was **635.3 MiB**, with no OOM kill.
+
+- [Full report and repeated throughput matrix](bench/results/20261108T230101Z-v0.3.39-working-tree/report.md)
+- [Every case, resource samples and soak coverage](bench/results/20261108T230101Z-v0.3.39-working-tree/summary.md)
+- [Validated totals](bench/results/20261108T230101Z-v0.3.39-working-tree/validation.json)
+- [Docker verification, including the 413 page](bench/results/20261108T230101Z-v0.3.39-working-tree/verification.json)
+
+## Historical baseline: 0.3.4
+
 Fresh measurements recorded on **2026-11-03** using the **0.3.4 baseline**. The final **0.3.7** release adds hostname metadata to upstream-failure and request-rejection warnings and refines background restart recovery. Those final changes were tested without rerunning the benchmark matrix, as requested. Previous result sets were deleted.
 
 The run completed **67 cases**, including **36,091,583 firewall requests**, with **zero failed requests**. Of those firewall requests, **976,812** were correctly rejected hostile requests. The separate backend calibration completed **908,733** requests. Accepted responses had to carry the origin marker and be fully read; cookie challenge pages were excluded from forwarded successes.

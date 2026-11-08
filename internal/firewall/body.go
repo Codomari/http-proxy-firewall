@@ -19,29 +19,44 @@ import (
 	"http-proxy-firewall/internal/observability"
 )
 
+// SetBodyLimitPage connects the status-page renderer before serving requests.
+func (e *Engine) SetBodyLimitPage(handler func(fiber.Ctx, int64, bool) error) {
+	e.bodyLimitPage = handler
+}
+
 // inspect returns a cleanup function that must span c.Next. On rejection it
 // sends the response itself; the caller observes its >=400 status and stops.
 func (e *Engine) inspect(c fiber.Ctx) (func(), error) {
+	// Keep one immutable limit for the complete upload, even during an admin save.
+	limits := e.limits
+	limits.MaxBodyBytes = e.MaxBodyBytes()
+	reject := func(status int, cause error, body []byte) error {
+		err := e.reject(c, status, cause, body)
+		if err == nil && status == fiber.StatusRequestEntityTooLarge && e.bodyLimitPage != nil {
+			return e.bodyLimitPage(c, limits.MaxBodyBytes, errors.Is(cause, cve2026109618.ErrInputLimit))
+		}
+		return err
+	}
 	req := c.Request()
 	allowsBody := requestMethodAllowsBody(string(req.Header.Method()))
 	length := int64(req.Header.ContentLength())
 	if !allowsBody && length > 0 {
-		return nil, e.reject(c, fiber.StatusBadRequest, errors.New("body is not allowed for this HTTP method"), nil)
+		return nil, reject(fiber.StatusBadRequest, errors.New("body is not allowed for this HTTP method"), nil)
 	}
-	if length > e.limits.MaxBodyBytes {
-		return nil, e.reject(c, fiber.StatusRequestEntityTooLarge, cve2026109618.ErrBodyTooLarge, nil)
+	if length > limits.MaxBodyBytes {
+		return nil, reject(fiber.StatusRequestEntityTooLarge, cve2026109618.ErrBodyTooLarge, nil)
 	}
 	if err, status := validateBodyHeaders(&req.Header); err != nil {
-		return nil, e.reject(c, status, err, nil)
+		return nil, reject(status, err, nil)
 	}
 	contentType := string(req.Header.ContentType())
 	// Header-only parsing rejects malformed types before buffering. The hardened
 	// checker independently validates body framing and all MIME ambiguities.
 	mediaType, params, err := parseContentType(contentType)
 	if err != nil {
-		return nil, e.reject(c, fiber.StatusBadRequest, err, nil)
+		return nil, reject(fiber.StatusBadRequest, err, nil)
 	}
-	reservation := e.limits.MaxBodyBytes + 1
+	reservation := limits.MaxBodyBytes + 1
 	if allowsBody && length >= 0 {
 		reservation = length
 		if length > 0 {
@@ -58,7 +73,7 @@ func (e *Engine) inspect(c fiber.Ctx) (func(), error) {
 		reservation = 0
 	}
 	if !e.budget.acquire(reservation) {
-		return nil, e.reject(c, fiber.StatusServiceUnavailable, errors.New("request body memory budget exhausted"), nil)
+		return nil, reject(fiber.StatusServiceUnavailable, errors.New("request body memory budget exhausted"), nil)
 	}
 	release := func() {
 		// Do not let pooled request objects retain an inspected large body.
@@ -76,34 +91,34 @@ func (e *Engine) inspect(c fiber.Ctx) (func(), error) {
 	} else {
 		body = req.Body()
 	}
-	observability.RecordRequestBody(c, body, err == nil && (length < 0 || length == int64(len(body))) && int64(len(body)) <= e.limits.MaxBodyBytes)
+	observability.RecordRequestBody(c, body, err == nil && (length < 0 || length == int64(len(body))) && int64(len(body)) <= limits.MaxBodyBytes)
 	if e.trackInput && len(body) > 0 {
 		monitoring.AddBytesIn(c, uint64(len(body)))
 	}
 	if !allowsBody && len(body) > 0 {
-		return release, e.reject(c, fiber.StatusBadRequest, errors.New("body is not allowed for this HTTP method"), nil)
+		return release, reject(fiber.StatusBadRequest, errors.New("body is not allowed for this HTTP method"), nil)
 	}
-	if int64(len(body)) > e.limits.MaxBodyBytes {
-		return release, e.reject(c, fiber.StatusRequestEntityTooLarge, cve2026109618.ErrBodyTooLarge, nil)
+	if int64(len(body)) > limits.MaxBodyBytes {
+		return release, reject(fiber.StatusRequestEntityTooLarge, cve2026109618.ErrBodyTooLarge, nil)
 	}
 	if err != nil || (length >= 0 && length != int64(len(body))) {
-		return release, e.reject(c, fiber.StatusBadRequest, errors.New("failed to read complete request body"), nil)
+		return release, reject(fiber.StatusBadRequest, errors.New("failed to read complete request body"), nil)
 	}
 	if len(body) == 0 {
 		body = nil
 		e.budget.release(reservation)
 		reservation = 0
 	}
-	fields, err := cve2026109618.Check(body, contentType, e.limits)
+	fields, err := cve2026109618.Check(body, contentType, limits)
 	if err != nil {
 		status := fiber.StatusBadRequest
 		if errors.Is(err, cve2026109618.ErrBodyTooLarge) || errors.Is(err, cve2026109618.ErrInputLimit) {
 			status = fiber.StatusRequestEntityTooLarge
 		}
-		return release, e.reject(c, status, err, body)
+		return release, reject(status, err, body)
 	}
 	if err := cve2026109619.Check(fields, e.uploadNames); err != nil {
-		return release, e.reject(c, fiber.StatusForbidden, err, nil)
+		return release, reject(fiber.StatusForbidden, err, nil)
 	}
 	if mediaType == "multipart/form-data" {
 		req.Header.SetContentType(mime.FormatMediaType(mediaType, map[string]string{"boundary": params["boundary"]}))

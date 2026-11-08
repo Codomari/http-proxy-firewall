@@ -1,6 +1,6 @@
 # http-proxy-firewall
 
-Version **0.3.39** · [Changelog](CHANGELOG.md) · [MIT license](LICENSE)
+Version **0.3.45** · [Changelog](CHANGELOG.md) · [MIT license](LICENSE)
 
 A reverse proxy and Layer 7 firewall that sits in front of your web applications. It checks requests before forwarding them, adds a cookie checkpoint during traffic spikes, and provides an embedded admin dashboard.
 
@@ -143,6 +143,7 @@ The names below work both as process environment variables and as `env[].key` en
 | Whitelists, checkpoint switches, DDoS threshold and upstream retries | The settings editable in [General settings](#general-settings). |
 | Penalty and cookie lifetimes | `DOS_DETECTOR_HOSTNAME_PENALTY_LIFETIME`, `PF_COOKIE_LIFETIME` |
 | Body inspection and cache limits | `CVE_MITIGATOR_MAX_BODY_BYTES`, `PF_MAX_BUFFERED_BYTES`, `CVE_MITIGATOR_UPLOAD_PROGRESS_NAMES`, `PF_CACHE_CAPACITY` |
+| Garbage collection | `GOGC`, `GOMEMLIMIT`; YAML and admin changes take effect after an application restart. |
 | Connection and request limits | `PF_MAX_CONNECTIONS`, `PF_MAX_CONCURRENT_REQUESTS`, `PF_UPSTREAM_MAX_CONNECTIONS` |
 | Temporary upstream burst capacity | `PF_UPSTREAM_ALLOW_OVERFLOW`, `PF_UPSTREAM_MAX_OVERFLOW_CONNECTIONS`; editable in [General settings](#general-settings). |
 | Incoming timeouts | `PF_READ_TIMEOUT`, `PF_WRITE_TIMEOUT`, `PF_IDLE_TIMEOUT` |
@@ -210,10 +211,12 @@ Set `PF_ADMIN_ENABLED=false` to disable the interface explicitly. With no creden
 | **Rules** | Edit general firewall settings and per-domain Cloudflare rules. |
 | **Debug** | Enable concurrent hostname/source captures and inspect requests and responses. |
 | **CERTBOT** | List certificates and request status, remove entries from **BLACKLIST**, and manually request a certificate. |
-| **TEST PAGES** | Open authenticated restart, blocked-hostname and missing-TLS-hostname previews without changing server state. |
+| **TEST PAGES** | Open authenticated 413 upload-size, restart, blocked-hostname and missing-TLS-hostname previews without changing server state. |
 | **Host Activity** | Search and sort per-host requests, rates, in-flight work, CVE blocks, errors and DDoS checkpoint state. |
 
-The dashboard is compiled into the binary, with no external fonts, CDN or frontend build step. All assets and APIs require authentication. The separate HEAD-only DNS test endpoint is public even when admin is disabled. Polling runs every two seconds and pauses when the browser tab is hidden; tab-specific views pause when you leave them.
+The dashboard is compiled into the binary, with no external fonts, CDN or frontend build step. All assets and APIs require authentication. The separate HEAD-only DNS test endpoint is public even when admin is disabled. Polling runs every five seconds and pauses when the browser tab is hidden; tab-specific views pause when you leave them.
+
+**Restart app** appears beside **Refresh now** when saved startup settings differ from the running configuration. It drains active requests and replaces the process using the same binary, working directory, original environment and command-line arguments. The new process reloads YAML. Reverting pending changes hides the button; the restart API also rechecks and performs no restart when none is needed. Invalid saved configuration blocks restart and shows an error. Existing process overrides still take precedence, so an overridden YAML change does not create a false restart requirement.
 
 Under **CERTBOT**, the certificate list shows hostname/names, issuer, validity dates and whether a certificate is automatic or static; private keys are never returned. **Remove** deletes a blacklist entry from memory and disk and fills the manual request form. Press **Request certificate** to start an asynchronous request; the status table reports requesting, issued or failed. Automatic TLS must be enabled, and requests still enforce Cloudflare exclusions, the hostname allowlist and DNS/signature verification. Existing usable certificates may be reused. Manual requests never automatically override a blacklist entry. Requests to an actively blacklisted hostname return a 409 Conflict page: "Hostname blacklisted. Make sure requested domain points to current server." Use an unblocked hostname or the origin IP to access admin controls. HTTPS can display the page only when a usable certificate already exists; otherwise TLS is refused without requesting a new certificate.
 
@@ -227,6 +230,8 @@ Open **TEST PAGES** to inspect status pages in a new tab. With the default admin
 
 Open **Rules → General settings**, edit the fields, then press **Save general settings**.
 
+Parameter controls are grouped under **Request Limits**, **DDoS Protection**, **Upstream** and **Garbage Collection**. The whitelist lists remain at the top of the form.
+
 | Admin control | Saved `env` key | Shipped default |
 | --- | --- | --- |
 | Whitelisted IPs | `IP_FILTER_WHITELIST` | `127.0.0.1,::1` |
@@ -235,6 +240,9 @@ Open **Rules → General settings**, edit the fields, then press **Save general 
 | Apply cookie checkpoint to whitelisted IPs and networks | `IP_FILTER_WHITELIST_CHECKPOINT` | `true` |
 | Apply cookie checkpoint to whitelisted countries | `IP_FILTER_COUNTRIES_CHECKPOINT` | `true` |
 | DDoS threshold in requests/second per hostname | `DOS_DETECTOR_HOSTNAME_REQUEST_THRESHOLD` | `200` |
+| Maximum request body (MiB) | `CVE_MITIGATOR_MAX_BODY_BYTES` | `200` MiB (`209715200` bytes) |
+| GC heap growth target (%) | `GOGC` | `100`; enter `-1` in admin to save `off` |
+| GC memory target | `GOMEMLIMIT` | `off` |
 | Upstream request retries | `PF_UPSTREAM_REQUEST_RETRY_TIMES` | `3` additional retries; `0` disables |
 | Concurrent request handlers | `PF_MAX_CONCURRENT_REQUESTS` | `256` |
 | Normal upstream connections | `PF_UPSTREAM_MAX_CONNECTIONS` | `256` per upstream pool |
@@ -242,6 +250,20 @@ Open **Rules → General settings**, edit the fields, then press **Save general 
 | Maximum connections during a burst | `PF_UPSTREAM_MAX_OVERFLOW_CONNECTIONS` | `512` total, including normal connections |
 
 Enter IPs, CIDR networks and English country names using commas or newlines. Each whitelist accepts up to 512 entries. The DDoS threshold accepts integers from 1 to 1,000,000,000 and uses a ten-second sampling window.
+
+The body-size control limits the complete request, including multipart boundaries, form fields and all files. One MiB is 1,048,576 bytes. Saving changes the limit for new requests immediately; an upload already being inspected keeps its original limit. The byte count must be positive and smaller than the active `PF_MAX_BUFFERED_BYTES` budget, which defaults to 256 MiB. Increase that budget in YAML and restart before choosing a larger body limit. Requests beyond the limit receive a designed **413 Request Entity Too Large** page showing the applied limit and how to reduce the upload. It uses the same 11-language selector as the 409 pages. Forms rejected for too many fields, files or nested values get an explanation specific to that limit. Upstream responses retain their own bodies and status codes.
+
+GC controls are saved to YAML and activate **Restart app** when the effective values change. They apply at startup. You can also edit the override directly:
+
+```yaml
+env:
+  - key: GOGC
+    value: "100"
+  - key: GOMEMLIMIT
+    value: "512MiB"
+```
+
+`GOGC` sets the heap-growth target between collections; lower percentages collect more often. YAML accepts a non-negative integer or `off`. `GOMEMLIMIT` sets a soft target for Go-managed memory, including the heap and runtime overhead; use a positive integer in bytes or with `B`, `KiB`, `MiB`, `GiB` or `TiB`, or `off` to remove the target. The runtime adjusts collection timing as it approaches the target, including when `GOGC` is off. This is not an exact heap threshold or a hard limit on process RAM. Leave room for active uploads and other allocations. Monitoring shows the current memory target and next heap goal. See the [Go GC guide](https://go.dev/doc/gc-guide) and [SetMemoryLimit documentation](https://pkg.go.dev/runtime/debug#SetMemoryLimit).
 
 Upstream request retries accepts a non-negative integer. Saving applies immediately to new requests on every upstream route and persists the value to the private override YAML. A value of `5` allows the initial attempt plus five retries; `0` allows just the initial attempt. Only connection closure, reset or broken pipe errors on GET/HEAD requests without a body qualify.
 
@@ -307,7 +329,7 @@ Captures, enabled state and log paths are saved under `debug` in the private YAM
 | Request body | Base64 when the complete original body is at most 4 KiB. Larger, incomplete or unread bodies are omitted with a reason. Capture observes bytes read by inspection and does not drain streamed uploads. |
 | Response body | Only `application/json`, including parameters such as `charset=utf-8`. Text previews are capped at 16 KiB; binary/base64 bodies require at most 4 KiB of original data. Other media types retain metadata and byte counts. |
 | Body viewer | Browser-side base64 decoding, formatted JSON/text and binary hex/ASCII. Supported gzip/deflate decoding stops at 1 MiB; unsupported or incomplete content falls back to captured bytes. Content is displayed as plain text. |
-| Live table | Latest 100 complete entries initially; up to 10,000 rows retained, with cursor polling every two seconds and at most 1 MiB read per poll. |
+| Live table | Latest 100 complete entries initially; up to 10,000 rows retained, with cursor polling every five seconds and at most 1 MiB read per poll. |
 
 Logs append to private files such as `log/<sanitized-hostname>-<hash>.log`. Source-filtered filenames also include `-from-<sanitized-ip>`; configured `log_file` paths override generated names. Files are created with mode `0600` and can be rotated externally. Failures appear in Debug status without changing request handling.
 
@@ -342,6 +364,7 @@ All paths below are relative to `/<PF_ADMIN_URI>`, which defaults to `/__pf/__ad
 | `/api/overview`, `/api/hosts`, `/api/runtime` | Monitoring snapshots. |
 | `/api/logs` | Bounded, cursor-based service log reads. |
 | `/api/general-rules` | GET/HEAD reads merged YAML settings; POST saves a JSON object containing `whitelist_ips`, `whitelist_networks`, `allowed_countries`, `ip_checkpoint`, `country_checkpoint` and `ddos_threshold`. Both booleans and the numeric threshold are required. JSON bodies are limited to 64 KiB. |
+| `/api/restart` | POST revalidates saved configuration and requests a graceful restart only when needed. Returns 202 when accepted, or 200 without restarting when no change is pending or a restart is already underway. Restart state is included in overview and general-settings responses. |
 | `/api/cloudflare-hosts` | Read rules; POST adds and DELETE removes a hostname rule. Up to 256 effective rules are supported. |
 | `/api/debug` | GET reads capture status; POST enables and DELETE disables a capture using `hostname` and optional `client_ip` query parameters. |
 | `/api/debug/logs` | Cursor-based reads for the selected capture, returning structured `entries` alongside original `lines`. |
@@ -350,6 +373,8 @@ All paths below are relative to `/<PF_ADMIN_URI>`, which defaults to `/__pf/__ad
 | `/api/test-pages` | GET lists registered status-page preview names, titles and HTTP status codes. |
 
 Editing General settings pauses background replacement of unsaved form fields. Save errors are shown in the panel; if YAML was saved but runtime application failed, the API reports that a restart is required.
+
+The general-settings JSON also accepts `max_body_bytes`, `gc_percent` (`-1` saves `GOGC=off`) and `gc_memory_limit` (for example `512MiB` or `off`). Older clients can omit these fields to preserve their saved values. Responses include `max_body_bytes_ceiling` and restart state; limits are validated before YAML or running settings change.
 
 </details>
 
@@ -385,7 +410,7 @@ To stage an installation without writing to `/etc`, use `make install DESTDIR=/a
 
 A graceful stop briefly returns **540 Server Restarting** and an embedded recovery page on public and admin URLs. The page shows "Server restarting", "Do not worry (:" and "We are coming back in few seconds", with a loading animation and no countdown or Retry-After delay. It probes the current URL with HEAD immediately and quietly checks again after failed probes. An embedded tic-tac-toe game against the computer uses a responsive 12×12 board, with five in a row horizontally, vertically or diagonally to win and unlimited rounds. The board and whose turn comes next are saved in local storage on this browser and site, so the next restart screen can resume the game. **Start fresh** clears the saved board immediately, including a pending computer move. If the visitor has started playing, recovery shows a ready message and a **Return to website** button; the game remains available. Otherwise recovery resumes with one GET after a 2xx/3xx response. Forms are never automatically resubmitted. Connection failures and 4xx/5xx responses keep the recovery page visible.
 
-Restart and hostname-blacklist pages select Azerbaijani, English, Turkish, Russian, Ukrainian, German, Italian, Spanish, Portuguese, Kazakh (Kazakhstan) or Japanese using the verified client IP's country from the local MaxMind database. Azerbaijan, Turkey, Russia, Ukraine, Germany, Italy, Spain, Portugal, Kazakhstan and Japan select their respective languages; other or unknown countries use English. Forwarding headers follow the existing proxy trust rules. Both 409 pages and the restart page also have a language selector; it updates the page in place, preserves game progress, and remembers the selected language in local storage for this site. All translations, HTML, styles, scripts, icons and game code are embedded in the binary; these pages need no external assets.
+Restart, 413 and hostname-conflict pages select Azerbaijani, English, Turkish, Russian, Ukrainian, German, Italian, Spanish, Portuguese, Kazakh (Kazakhstan) or Japanese using the verified client IP's country from the local MaxMind database. Azerbaijan, Turkey, Russia, Ukraine, Germany, Italy, Spain, Portugal, Kazakhstan and Japan select their respective languages; other or unknown countries use English. Forwarding headers follow the existing proxy trust rules. These pages also have a language selector; it updates the page in place, preserves game progress, and remembers the selected language in local storage for this site. All translations, HTML, styles, scripts, icons and game code are embedded in the binary; these pages need no external assets.
 
 TLS requests without a hostname in SNI receive a translated **409 Conflict** page: "Secure request without hostname not allowed." The request never reaches an upstream or automatic certificate issuance. Static TLS uses its configured certificate to finish the handshake; automatic TLS uses a temporary in-memory self-signed certificate for this response. Clients that enforce certificate trust may reject the handshake before seeing the HTTP page. Normal hostname requests keep their existing certificate selection.
 
@@ -418,7 +443,7 @@ Keep deployment files private. `proxy-firewall.override.yaml`, credentials, keys
 | Behavior | Default or result |
 | --- | --- |
 | Request bodies | Allowed only for POST, PUT and PATCH; other methods must have empty bodies. Chunked bodies are inspected fully before forwarding. |
-| Body size | 32 MiB per request; 256 MiB shared inspection-buffer budget. |
+| Body size | 200 MiB per request, editable in admin; 256 MiB shared inspection-buffer budget. |
 | Form limits | 1,000 fields/parts, 20 file controls, nesting depth 16, and 16 headers / 16 KiB of headers per part. |
 | Invalid input | Malformed forms: 400; blocked upload-progress fields: 403; resource limits: 413; unsupported content encoding: 415. |
 | Admission overload | 503 before application forwarding. Inspection-buffer exhaustion returns 503 before reading the upload. |

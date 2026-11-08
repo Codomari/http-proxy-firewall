@@ -44,6 +44,7 @@ type Server struct {
 	adminUI       *admin.Handler
 	stats         *monitoring.Registry
 	statusCountry func(fiber.Ctx) string
+	bodyLimit     func() int64
 	admission     requestAdmission
 	upstream      *proxy.Handler
 	mu            sync.Mutex
@@ -85,6 +86,8 @@ func New(cfg config.Config, engine *firewall.Engine, upstream *proxy.Handler, lo
 	}
 	s := &Server{cfg: cfg, logger: logger, errors: make(chan error, 3), stats: stats, adminUI: adminHandler, statusCountry: engine.ClientCountry}
 	s.upstream = upstream
+	s.bodyLimit = engine.MaxBodyBytes
+	engine.SetBodyLimitPage(s.serveRequestTooLarge)
 	s.admission.limit = cfg.HTTP.MaxConcurrentRequests
 	basePath, err := config.AdminPath(cfg.Admin.URI)
 	if err != nil {

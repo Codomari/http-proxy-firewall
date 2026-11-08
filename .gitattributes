@@ -1,0 +1,2 @@
+# Preserve HTTP wire captures and accept protocol-required CRLF line endings.
+bench/results/**/*.http -text whitespace=cr-at-eol

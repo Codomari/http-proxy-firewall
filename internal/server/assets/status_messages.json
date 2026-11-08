@@ -22,7 +22,10 @@
     "tls_hostname_message": "Secure request without hostname not allowed.",
     "game_rules": "12×12 · Five in a row, column or diagonal wins.",
     "restart_game": "Start fresh",
-    "language_label": "Language"
+    "language_label": "Language",
+    "body_limit_title": "Request Entity Too Large",
+    "body_limit_message": "Your upload or form is larger than this website allows. The maximum total size is {limit}. Use smaller files or send fewer files at a time, then try again.",
+    "input_limit_message": "This form contains too many fields, files or nested values. Send fewer items or simplify the form, then try again."
   },
   "az": {
     "restart_title": "Server yenidən başladılır",
@@ -47,7 +50,10 @@
     "tls_hostname_message": "Domen adı olmadan təhlükəsiz sorğuya icazə verilmir.",
     "game_rules": "12×12 · Üfüqi, şaquli və ya diaqonal üzrə beş işarə ilə qazanın.",
     "restart_game": "Yenidən başlayın",
-    "language_label": "Dil"
+    "language_label": "Dil",
+    "body_limit_title": "Sorğunun həcmi çox böyükdür",
+    "body_limit_message": "Yüklədiyiniz faylların və ya formanın həcmi bu saytın icazə verdiyi həddi aşır. Maksimum ümumi həcm {limit}-dır. Daha kiçik fayllar seçin və ya eyni anda daha az fayl göndərib yenidən cəhd edin.",
+    "input_limit_message": "Bu formada həddindən artıq çox sahə, fayl və ya iç-içə dəyər var. Daha az element göndərin və ya formanı sadələşdirib yenidən cəhd edin."
   },
   "tr": {
     "restart_title": "Sunucu yeniden başlatılıyor",
@@ -72,7 +78,10 @@
     "tls_hostname_message": "Alan adı olmadan güvenli isteğe izin verilmez.",
     "game_rules": "12×12 · Yatay, dikey veya çapraz beş işaretle kazanın.",
     "restart_game": "Baştan başla",
-    "language_label": "Dil"
+    "language_label": "Dil",
+    "body_limit_title": "İstek boyutu çok büyük",
+    "body_limit_message": "Yüklediğiniz dosyalar veya form bu sitenin izin verdiği boyutu aşıyor. İzin verilen toplam boyut en fazla {limit}. Daha küçük dosyalar kullanın veya aynı anda daha az dosya göndererek yeniden deneyin.",
+    "input_limit_message": "Bu formda çok fazla alan, dosya veya iç içe değer var. Daha az öğe gönderin veya formu sadeleştirip yeniden deneyin."
   },
   "ru": {
     "restart_title": "Сервер перезапускается",
@@ -97,7 +106,10 @@
     "tls_hostname_message": "Защищённый запрос без имени домена не разрешён.",
     "game_rules": "Поле 12×12 · Пять в ряд по горизонтали, вертикали или диагонали — победа.",
     "restart_game": "Начать заново",
-    "language_label": "Язык"
+    "language_label": "Язык",
+    "body_limit_title": "Слишком большой объём запроса",
+    "body_limit_message": "Размер загружаемых файлов или формы превышает допустимый для этого сайта. Максимальный общий размер — {limit}. Уменьшите файлы или отправляйте их меньшими группами и попробуйте снова.",
+    "input_limit_message": "В этой форме слишком много полей, файлов или вложенных значений. Отправьте меньше элементов или упростите форму и попробуйте снова."
   },
   "uk": {
     "restart_title": "Сервер перезапускається",
@@ -122,7 +134,10 @@
     "tls_hostname_message": "Захищений запит без імені домену не дозволено.",
     "game_rules": "Поле 12×12 · П’ять у ряд по горизонталі, вертикалі або діагоналі — перемога.",
     "restart_game": "Почати заново",
-    "language_label": "Мова"
+    "language_label": "Мова",
+    "body_limit_title": "Завеликий обсяг запиту",
+    "body_limit_message": "Розмір завантажуваних файлів або форми перевищує дозволений для цього сайту. Максимальний загальний розмір — {limit}. Зменште файли або надсилайте їх меншими групами та спробуйте ще раз.",
+    "input_limit_message": "У цій формі забагато полів, файлів або вкладених значень. Надішліть менше елементів або спростіть форму та спробуйте ще раз."
   },
   "de": {
     "restart_title": "Server wird neu gestartet",
@@ -147,7 +162,10 @@
     "tls_hostname_message": "Eine sichere Anfrage ohne Domainnamen ist nicht erlaubt.",
     "game_rules": "12×12 · Fünf waagerecht, senkrecht oder diagonal gewinnen.",
     "restart_game": "Neu beginnen",
-    "language_label": "Sprache"
+    "language_label": "Sprache",
+    "body_limit_title": "Anfrage zu groß",
+    "body_limit_message": "Ihre hochgeladenen Dateien oder das Formular überschreiten die für diese Website erlaubte Größe. Die maximale Gesamtgröße beträgt {limit}. Verwenden Sie kleinere Dateien oder senden Sie weniger Dateien auf einmal und versuchen Sie es erneut.",
+    "input_limit_message": "Dieses Formular enthält zu viele Felder, Dateien oder verschachtelte Werte. Senden Sie weniger Elemente oder vereinfachen Sie das Formular und versuchen Sie es erneut."
   },
   "it": {
     "restart_title": "Riavvio del server in corso",
@@ -172,7 +190,10 @@
     "tls_hostname_message": "Una richiesta sicura senza nome di dominio non è consentita.",
     "game_rules": "12×12 · Vinci con cinque simboli in orizzontale, verticale o diagonale.",
     "restart_game": "Ricomincia",
-    "language_label": "Lingua"
+    "language_label": "Lingua",
+    "body_limit_title": "Richiesta troppo grande",
+    "body_limit_message": "I file caricati o il modulo superano le dimensioni consentite da questo sito. La dimensione totale massima è {limit}. Usa file più piccoli o invia meno file alla volta, poi riprova.",
+    "input_limit_message": "Questo modulo contiene troppi campi, file o valori annidati. Invia meno elementi o semplifica il modulo, poi riprova."
   },
   "es": {
     "restart_title": "El servidor se está reiniciando",
@@ -197,7 +218,10 @@
     "tls_hostname_message": "No se permite una solicitud segura sin nombre de dominio.",
     "game_rules": "12×12 · Gana con cinco en horizontal, vertical o diagonal.",
     "restart_game": "Empezar de nuevo",
-    "language_label": "Idioma"
+    "language_label": "Idioma",
+    "body_limit_title": "Solicitud demasiado grande",
+    "body_limit_message": "Los archivos o el formulario superan el tamaño permitido por este sitio. El tamaño total máximo es de {limit}. Usa archivos más pequeños o envía menos archivos a la vez e inténtalo de nuevo.",
+    "input_limit_message": "Este formulario contiene demasiados campos, archivos o valores anidados. Envía menos elementos o simplifica el formulario e inténtalo de nuevo."
   },
   "pt": {
     "restart_title": "O servidor está a reiniciar",
@@ -222,7 +246,10 @@
     "tls_hostname_message": "Não é permitido um pedido seguro sem nome de domínio.",
     "game_rules": "12×12 · Ganhe com cinco na horizontal, vertical ou diagonal.",
     "restart_game": "Começar de novo",
-    "language_label": "Idioma"
+    "language_label": "Idioma",
+    "body_limit_title": "Pedido demasiado grande",
+    "body_limit_message": "Os ficheiros ou o formulário excedem o tamanho permitido por este site. O tamanho total máximo é {limit}. Use ficheiros mais pequenos ou envie menos ficheiros de cada vez e tente novamente.",
+    "input_limit_message": "Este formulário contém demasiados campos, ficheiros ou valores aninhados. Envie menos elementos ou simplifique o formulário e tente novamente."
   },
   "kk-KZ": {
     "restart_title": "Сервер қайта іске қосылуда",
@@ -247,7 +274,10 @@
     "tls_hostname_message": "Домен атауынсыз қауіпсіз сұрауға рұқсат етілмейді.",
     "game_rules": "12×12 · Көлденең, тігінен немесе диагональ бойынша бес белгімен жеңіңіз.",
     "restart_game": "Қайта бастау",
-    "language_label": "Тіл"
+    "language_label": "Тіл",
+    "body_limit_title": "Сұрау көлемі тым үлкен",
+    "body_limit_message": "Жүктелетін файлдардың немесе пішіннің көлемі осы сайт рұқсат еткен шектен асты. Ең үлкен жалпы көлем — {limit}. Кішірек файлдарды таңдаңыз немесе бір уақытта азырақ файл жіберіп, қайталап көріңіз.",
+    "input_limit_message": "Бұл пішінде өрістер, файлдар немесе ішкі мәндер тым көп. Азырақ элемент жіберіңіз немесе пішінді жеңілдетіп, қайталап көріңіз."
   },
   "ja": {
     "restart_title": "サーバーを再起動しています",
@@ -272,6 +302,9 @@
     "tls_hostname_message": "ドメイン名のないセキュアなリクエストは許可されていません。",
     "game_rules": "12×12 · 縦・横・斜めに5つ並べると勝ちです。",
     "restart_game": "最初から始める",
-    "language_label": "言語"
+    "language_label": "言語",
+    "body_limit_title": "リクエストのサイズが大きすぎます",
+    "body_limit_message": "アップロードするファイルやフォームが、このサイトで許可されているサイズを超えています。合計サイズの上限は {limit} です。ファイルを小さくするか、一度に送信するファイル数を減らして、もう一度お試しください。",
+    "input_limit_message": "このフォームには、項目、ファイル、または入れ子になった値が多すぎます。送信する項目を減らすか、フォームを簡単にして、もう一度お試しください。"
   }
 }

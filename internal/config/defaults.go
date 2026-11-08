@@ -11,6 +11,7 @@ const DefaultAdminURI = "__pf/__admin"
 
 func Defaults() Config {
 	return Config{
+		Runtime: Runtime{GCPercent: 100, MemoryLimitBytes: 1<<63 - 1},
 		HTTP: HTTP{
 			Listen: "0.0.0.0:80", TLSListen: "0.0.0.0:443",
 			ReadTimeout: 10 * time.Minute, WriteTimeout: 10 * time.Minute, IdleTimeout: time.Minute,
@@ -23,7 +24,7 @@ func Defaults() Config {
 		},
 		TLS: TLS{Enabled: true, CacheDir: ".cache"},
 		Firewall: Firewall{
-			MaxBodyBytes: 32 << 20, MaxBufferedBytes: 256 << 20,
+			MaxBodyBytes: 200 << 20, MaxBufferedBytes: 256 << 20,
 			WhitelistNetworks:   []string{"127.0.0.0/8", "::1/128"},
 			WhitelistCheckpoint: true, CountryCheckpoint: true,
 			RequestThreshold: 200, SamplingWindow: 10 * time.Second, PenaltyLifetime: 10 * time.Minute,

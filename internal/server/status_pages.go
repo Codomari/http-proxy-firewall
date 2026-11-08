@@ -28,6 +28,9 @@ type statusMessages struct {
 	BlockedMessage     string `json:"blocked_message"`
 	TLSHostnameTitle   string `json:"tls_hostname_title"`
 	TLSHostnameMessage string `json:"tls_hostname_message"`
+	BodyLimitTitle     string `json:"body_limit_title"`
+	BodyLimitMessage   string `json:"body_limit_message"`
+	InputLimitMessage  string `json:"input_limit_message"`
 	GameTitle          string `json:"game_title"`
 	GameRules          string `json:"game_rules"`
 	RestartGame        string `json:"restart_game"`
@@ -42,7 +45,7 @@ type statusMessages struct {
 	CellLabel          string `json:"cell_label"`
 }
 
-type statusPage struct{ language, restarting, blacklisted, tlsHostnameRequired string }
+type statusPage struct{ language, restarting, blacklisted, tlsHostnameRequired, requestTooLarge, inputTooLarge string }
 
 var statusPages = buildStatusPages()
 
@@ -89,9 +92,20 @@ func buildStatusPages() map[string]statusPage {
 			"{{TLS_HOSTNAME_MESSAGE}}", html.EscapeString(messages.TLSHostnameMessage),
 			"{{STYLE}}", restartingCSS, "{{SCRIPT}}", restartingJS,
 		)
-		blocked := strings.NewReplacer("{{PAGE_TYPE}}", "blacklisted", "{{STATUS_TITLE_KEY}}", "blocked_title", "{{STATUS_MESSAGE_KEY}}", "blocked_message").Replace(blacklistedPage)
-		missingHostname := strings.NewReplacer("{{PAGE_TYPE}}", "tls-hostname", "{{STATUS_TITLE_KEY}}", "tls_hostname_title", "{{STATUS_MESSAGE_KEY}}", "tls_hostname_message", "{{BLOCKED_TITLE}}", "{{TLS_HOSTNAME_TITLE}}", "{{BLOCKED_MESSAGE}}", "{{TLS_HOSTNAME_MESSAGE}}").Replace(blacklistedPage)
-		pages[language] = statusPage{language, replacer.Replace(restartingHTML), replacer.Replace(blocked), replacer.Replace(missingHostname)}
+		errorPage := func(kind, status, titleKey, messageKey, title, message string) string {
+			return replacer.Replace(strings.NewReplacer(
+				"{{PAGE_TYPE}}", kind, "{{STATUS_CODE}}", status,
+				"{{STATUS_TITLE_KEY}}", titleKey, "{{STATUS_MESSAGE_KEY}}", messageKey,
+				"{{STATUS_TITLE}}", html.EscapeString(title), "{{STATUS_MESSAGE}}", html.EscapeString(message),
+			).Replace(statusErrorPage))
+		}
+		pages[language] = statusPage{
+			language: language, restarting: replacer.Replace(restartingHTML),
+			blacklisted:         errorPage("blacklisted", "409", "blocked_title", "blocked_message", messages.BlockedTitle, messages.BlockedMessage),
+			tlsHostnameRequired: errorPage("tls-hostname", "409", "tls_hostname_title", "tls_hostname_message", messages.TLSHostnameTitle, messages.TLSHostnameMessage),
+			requestTooLarge:     errorPage("request-too-large", "413", "body_limit_title", "body_limit_message", messages.BodyLimitTitle, messages.BodyLimitMessage),
+			inputTooLarge:       errorPage("request-too-large", "413", "body_limit_title", "input_limit_message", messages.BodyLimitTitle, messages.InputLimitMessage),
+		}
 	}
 	return pages
 }

@@ -7,6 +7,9 @@ import (
 
 func (s *Server) statusTestPages() []admin.TestPage {
 	return []admin.TestPage{
+		{Name: "request-too-large", Title: "Request Entity Too Large", Status: fiber.StatusRequestEntityTooLarge, Handler: func(c fiber.Ctx) error {
+			return s.serveRequestTooLarge(c, s.bodyLimit(), false)
+		}},
 		{Name: "restart", Title: "Server restarting", Status: statusServerRestarting, Handler: func(c fiber.Ctx) error {
 			serveRestarting(c.RequestCtx(), s.statusCountry(c))
 			return nil
