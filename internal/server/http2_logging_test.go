@@ -13,7 +13,9 @@ import (
 )
 
 func TestHTTP2LogWriterUsesStructuredFieldsAndSampling(t *testing.T) {
-	s := newTestServer(t, serverConfig("http://127.0.0.1:1"))
+	cfg := serverConfig("http://127.0.0.1:1")
+	cfg.HTTP.HTTP2Enable = true
+	s := newTestServer(t, cfg)
 	var output bytes.Buffer
 	s.app.Server().Logger = &safeLogger{logger: slog.New(slog.NewTextHandler(&output, nil))}
 	message := "http2: server: error reading preface from client [2001:db8::9]:58470: connection reset by peer\n"
@@ -35,6 +37,7 @@ func TestHTTP2LogWriterUsesStructuredFieldsAndSampling(t *testing.T) {
 
 func TestHTTP2PrefaceFailureLogsPeerAndSNI(t *testing.T) {
 	cfg := serverConfig("http://127.0.0.1:1")
+	cfg.HTTP.HTTP2Enable = true
 	cert, key, roots := certificateFiles(t)
 	cfg.TLS.Enabled, cfg.TLS.CertificateFile, cfg.TLS.PrivateKeyFile = true, cert, key
 	s := newTestServer(t, cfg)

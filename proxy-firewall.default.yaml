@@ -95,8 +95,11 @@ env:
     value: "10m"
   - key: PF_WRITE_TIMEOUT
     value: "10m"
-  - key: PF_IDLE_TIMEOUT
-    value: "1m"
+  # HTTP/1.1 over HTTP and HTTPS is always available. HTTP/2 is opt-in.
+  - key: PF_HTTP2_ENABLE
+    value: "false"
+  - key: PF_IDLE_REQUEST_TIMEOUT
+    value: "15s"
   - key: PF_UPSTREAM_READ_TIMEOUT
     value: "10m"
   - key: PF_UPSTREAM_WRITE_TIMEOUT

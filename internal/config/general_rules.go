@@ -8,12 +8,16 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 )
 
 type GeneralRules struct {
 	ConnectionLimits
 	MaxBodyBytes              int64    `json:"max_body_bytes"`
+	MaxBufferedBytes          int64    `json:"max_buffered_bytes"`
+	HTTP2Enable               bool     `json:"http2_enable"`
+	IdleRequestTimeout        string   `json:"idle_request_timeout"`
 	GCPercent                 int      `json:"gc_percent"`
 	GCMemoryLimit             string   `json:"gc_memory_limit"`
 	WhitelistIPs              []string `json:"whitelist_ips"`
@@ -25,10 +29,10 @@ type GeneralRules struct {
 	UpstreamRequestRetryTimes int      `json:"upstream_request_retry_times"`
 }
 
-var generalRuleKeys = []string{"IP_FILTER_WHITELIST", "IP_FILTER_WHITELIST_NETWORKS", "IP_FILTER_ALLOWED_COUNTRIES", "IP_FILTER_WHITELIST_CHECKPOINT", "IP_FILTER_COUNTRIES_CHECKPOINT", "DOS_DETECTOR_HOSTNAME_REQUEST_THRESHOLD", "PF_UPSTREAM_REQUEST_RETRY_TIMES", "PF_MAX_CONCURRENT_REQUESTS", "PF_UPSTREAM_MAX_CONNECTIONS", "PF_UPSTREAM_ALLOW_OVERFLOW", "PF_UPSTREAM_MAX_OVERFLOW_CONNECTIONS", "CVE_MITIGATOR_MAX_BODY_BYTES", "GOGC", "GOMEMLIMIT"}
+var generalRuleKeys = []string{"IP_FILTER_WHITELIST", "IP_FILTER_WHITELIST_NETWORKS", "IP_FILTER_ALLOWED_COUNTRIES", "IP_FILTER_WHITELIST_CHECKPOINT", "IP_FILTER_COUNTRIES_CHECKPOINT", "DOS_DETECTOR_HOSTNAME_REQUEST_THRESHOLD", "PF_UPSTREAM_REQUEST_RETRY_TIMES", "PF_MAX_CONCURRENT_REQUESTS", "PF_UPSTREAM_MAX_CONNECTIONS", "PF_UPSTREAM_ALLOW_OVERFLOW", "PF_UPSTREAM_MAX_OVERFLOW_CONNECTIONS", "CVE_MITIGATOR_MAX_BODY_BYTES", "GOGC", "GOMEMLIMIT", "PF_MAX_BUFFERED_BYTES", "PF_HTTP2_ENABLE", "PF_IDLE_REQUEST_TIMEOUT", "PF_IDLE_TIMEOUT"}
 
 func GeneralRulesFromFirewall(f Firewall) GeneralRules {
-	return GeneralRules{ConnectionLimits: ConnectionLimitsFromConfig(Defaults()), MaxBodyBytes: f.MaxBodyBytes, GCPercent: 100, GCMemoryLimit: "off", WhitelistIPs: f.WhitelistIPs, WhitelistNetworks: f.WhitelistNetworks, AllowedCountries: f.AllowedCountries, IPCheckpoint: f.WhitelistCheckpoint, CountryCheckpoint: f.CountryCheckpoint, DDoSThreshold: f.RequestThreshold}
+	return GeneralRules{ConnectionLimits: ConnectionLimitsFromConfig(Defaults()), MaxBodyBytes: f.MaxBodyBytes, MaxBufferedBytes: f.MaxBufferedBytes, IdleRequestTimeout: Defaults().HTTP.IdleTimeout.String(), GCPercent: 100, GCMemoryLimit: "off", WhitelistIPs: f.WhitelistIPs, WhitelistNetworks: f.WhitelistNetworks, AllowedCountries: f.AllowedCountries, IPCheckpoint: f.WhitelistCheckpoint, CountryCheckpoint: f.CountryCheckpoint, DDoSThreshold: f.RequestThreshold}
 }
 
 func (rules GeneralRules) Normalize() (GeneralRules, error) {
@@ -36,11 +40,22 @@ func (rules GeneralRules) Normalize() (GeneralRules, error) {
 	if result.GCMemoryLimit == "" {
 		result.GCMemoryLimit = "off"
 	}
+	if result.IdleRequestTimeout == "" {
+		result.IdleRequestTimeout = Defaults().HTTP.IdleTimeout.String()
+	}
+	idleTimeout, err := time.ParseDuration(result.IdleRequestTimeout)
+	if err != nil || idleTimeout <= 0 {
+		return GeneralRules{}, errors.New("idle request timeout must be a positive duration such as 15s")
+	}
+	result.IdleRequestTimeout = idleTimeout.String()
 	if _, err := RuntimeFromValues(map[string]string{"GOGC": gcPercentValue(result.GCPercent), "GOMEMLIMIT": result.GCMemoryLimit}); err != nil {
 		return GeneralRules{}, err
 	}
 	if result.MaxBodyBytes <= 0 || result.MaxBodyBytes >= int64(math.MaxInt) {
 		return GeneralRules{}, errors.New("maximum request body size must be a positive byte count with room for an overflow probe")
+	}
+	if result.MaxBufferedBytes <= result.MaxBodyBytes {
+		return GeneralRules{}, errors.New("shared body buffer budget must be larger than the maximum request body size")
 	}
 	if err := result.ConnectionLimits.Validate(); err != nil {
 		return GeneralRules{}, err
@@ -117,16 +132,29 @@ func generalRulesFromValues(values map[string]string) (GeneralRules, error) {
 	if err != nil {
 		return GeneralRules{}, err
 	}
-	rules := GeneralRules{ConnectionLimits: ConnectionLimitsFromConfig(Defaults()), MaxBodyBytes: Defaults().Firewall.MaxBodyBytes, WhitelistIPs: split(values[generalRuleKeys[0]]), WhitelistNetworks: split(values[generalRuleKeys[1]]), AllowedCountries: split(values[generalRuleKeys[2]]), IPCheckpoint: true, CountryCheckpoint: true, DDoSThreshold: 200, UpstreamRequestRetryTimes: Defaults().Proxy.RequestRetryTimes}
-	if value := values["CVE_MITIGATOR_MAX_BODY_BYTES"]; value != "" {
-		parsed, err := strconv.ParseInt(value, 10, 64)
-		if err != nil {
-			return GeneralRules{}, errors.New("CVE_MITIGATOR_MAX_BODY_BYTES must be an integer")
+	rules := GeneralRules{ConnectionLimits: ConnectionLimitsFromConfig(Defaults()), MaxBodyBytes: Defaults().Firewall.MaxBodyBytes, MaxBufferedBytes: Defaults().Firewall.MaxBufferedBytes, WhitelistIPs: split(values[generalRuleKeys[0]]), WhitelistNetworks: split(values[generalRuleKeys[1]]), AllowedCountries: split(values[generalRuleKeys[2]]), IPCheckpoint: true, CountryCheckpoint: true, DDoSThreshold: 200, UpstreamRequestRetryTimes: Defaults().Proxy.RequestRetryTimes}
+	for key, target := range map[string]*int64{"CVE_MITIGATOR_MAX_BODY_BYTES": &rules.MaxBodyBytes, "PF_MAX_BUFFERED_BYTES": &rules.MaxBufferedBytes} {
+		if value := values[key]; value != "" {
+			parsed, err := strconv.ParseInt(value, 10, 64)
+			if err != nil {
+				return GeneralRules{}, errors.New(key + " must be an integer")
+			}
+			*target = parsed
 		}
-		rules.MaxBodyBytes = parsed
 	}
 	rules.GCPercent = runtimeSettings.GCPercent
 	rules.GCMemoryLimit = values["GOMEMLIMIT"]
+	rules.IdleRequestTimeout = values["PF_IDLE_REQUEST_TIMEOUT"]
+	if rules.IdleRequestTimeout == "" {
+		rules.IdleRequestTimeout = values["PF_IDLE_TIMEOUT"]
+	}
+	if value := values["PF_HTTP2_ENABLE"]; value != "" {
+		parsed, err := strconv.ParseBool(value)
+		if err != nil {
+			return GeneralRules{}, errors.New("PF_HTTP2_ENABLE must be true or false")
+		}
+		rules.HTTP2Enable = parsed
+	}
 	for key, target := range map[string]*int{"PF_MAX_CONCURRENT_REQUESTS": &rules.MaxConcurrentRequests, "PF_UPSTREAM_MAX_CONNECTIONS": &rules.UpstreamMaxConnections, "PF_UPSTREAM_MAX_OVERFLOW_CONNECTIONS": &rules.UpstreamMaxOverflowConnections} {
 		if value := values[key]; value != "" {
 			parsed, err := strconv.Atoi(value)
@@ -195,6 +223,9 @@ func (file *GeneralRulesFile) Save(rules GeneralRules) error {
 		"PF_UPSTREAM_ALLOW_OVERFLOW":           strconv.FormatBool(rules.UpstreamAllowOverflow),
 		"PF_UPSTREAM_MAX_OVERFLOW_CONNECTIONS": strconv.Itoa(rules.UpstreamMaxOverflowConnections),
 		"CVE_MITIGATOR_MAX_BODY_BYTES":         strconv.FormatInt(rules.MaxBodyBytes, 10),
+		"PF_MAX_BUFFERED_BYTES":                strconv.FormatInt(rules.MaxBufferedBytes, 10),
+		"PF_HTTP2_ENABLE":                      strconv.FormatBool(rules.HTTP2Enable),
+		"PF_IDLE_REQUEST_TIMEOUT":              rules.IdleRequestTimeout,
 		"GOGC":                                 gcPercentValue(rules.GCPercent),
 		"GOMEMLIMIT":                           rules.GCMemoryLimit,
 	})

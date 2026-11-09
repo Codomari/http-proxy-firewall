@@ -22,6 +22,7 @@ func TestTLSWithoutSNIReturnsTranslatedConflictWithoutIssuingCertificate(t *test
 	defer backend.Close()
 	for _, static := range []bool{false, true} {
 		cfg := serverConfig(backend.URL)
+		cfg.HTTP.HTTP2Enable = true
 		cfg.TLS.Enabled = true
 		if static {
 			cfg.TLS.CertificateFile, cfg.TLS.PrivateKeyFile, _ = certificateFiles(t)

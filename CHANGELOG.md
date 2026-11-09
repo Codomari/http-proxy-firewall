@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.3.48 — 2026-11-09
+
+Three user-facing features since 0.3.45, following the project's patch-count convention.
+
+### Added
+
+- Edit `PF_MAX_BUFFERED_BYTES` in Admin → Rules → General settings as a shared body buffer budget in MiB. Show the active budget and pending restart, require a budget larger than the request-body limit, and preserve omitted values for older API clients.
+
+### Changed
+
+- Disable HTTP/2 by default and add `PF_HTTP2_ENABLE` to YAML, flags and the admin panel. HTTP/1.1 over HTTP and HTTPS remains available, and HTTP/2 can be enabled over HTTPS after a restart. Preserve ACME certificate negotiation, prevent cleartext HTTP/2 upgrades from tunneling to an origin, and remove upstream `Alt-Svc` advertisements for unsupported protocols. The service has no QUIC/HTTP/3 listener.
+- Default idle client keepalive connections to a 15-second timeout. Add `PF_IDLE_REQUEST_TIMEOUT` to YAML, flags and the admin panel, with `PF_IDLE_TIMEOUT` retained as a legacy fallback. Apply saved changes after restart to HTTP/HTTPS and pprof listeners while preserving active upload, response and tunnel read/write deadlines.
+
+### Fixed
+
+- Keep the HTTP/2 checkbox at the same compact size as other admin checkboxes by excluding it from full-width text-input styling.
+
+### Validation
+
+- Pass `make check`, covering unit and socket integration tests, race checks, `go vet`, the build and five installation checks. Verify HTTP/2 opt-in negotiation, HTTP/HTTPS idle connection closure, ACME negotiation, admin persistence and restart handling, and frontend form serialization and validation.
+
 ## 0.3.45 — 2026-11-08
 
 Six user-facing changes since 0.3.39, following the project's patch-count convention.

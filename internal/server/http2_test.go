@@ -34,6 +34,7 @@ func TestHTTP2NegotiationFirewallForwardingAndStreams(t *testing.T) {
 	defer backend.Close()
 	defer once.Do(func() { close(release) })
 	cfg := serverConfig(backend.URL)
+	cfg.HTTP.HTTP2Enable = true
 	cert, key, roots := certificateFiles(t)
 	cfg.TLS.Enabled, cfg.TLS.CertificateFile, cfg.TLS.PrivateKeyFile = true, cert, key
 	s := newTestServer(t, cfg)
@@ -115,6 +116,7 @@ func TestHTTP2GracefulShutdownClosesIdleConnection(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, "ok") }))
 	defer backend.Close()
 	cfg := serverConfig(backend.URL)
+	cfg.HTTP.HTTP2Enable = true
 	cert, key, roots := certificateFiles(t)
 	cfg.TLS.Enabled, cfg.TLS.CertificateFile, cfg.TLS.PrivateKeyFile = true, cert, key
 	s := newTestServer(t, cfg)

@@ -7,6 +7,29 @@ import (
 	"testing"
 )
 
+func TestHTTP2CleartextUpgradeFallsBackToHTTP1(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ProtoMajor != 1 || r.Header.Get("Upgrade") != "" || r.Header.Get("HTTP2-Settings") != "" {
+			t.Error("h2c upgrade reached the origin")
+		}
+		w.WriteHeader(204)
+	}))
+	defer backend.Close()
+	address, _ := frontend(t, testConfig(backend.URL))
+	request, _ := http.NewRequest("GET", address+"/", nil)
+	request.Header.Set("Connection", "Upgrade, HTTP2-Settings")
+	request.Header.Set("Upgrade", "h2c")
+	request.Header.Set("HTTP2-Settings", "AAMAAABkAAQAAP__")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != 204 {
+		t.Fatalf("h2c request did not fall back to ordinary HTTP: %d", response.StatusCode)
+	}
+}
+
 func TestVirtualHostRoutesAndDefaultFallback(t *testing.T) {
 	upstream := func(name string) *httptest.Server {
 		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, name+" "+r.Host) }))

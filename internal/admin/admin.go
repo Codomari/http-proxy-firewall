@@ -92,7 +92,7 @@ func New(cfg config.Config, registry *monitoring.Registry, penalties PenaltySour
 	h.cloudflare, _ = penalties.(cloudflareSource)
 	h.general, _ = penalties.(generalRulesSource)
 	h.startup = cfg
-	h.bodyLimitCeiling = min(cfg.Firewall.MaxBufferedBytes-1, int64(1<<53-1))
+	h.bodyLimitCeiling = min(cfg.Firewall.MaxBufferedBytes-1, maxAdminByteCount)
 	h.generalFile.Path = config.OverrideYAML
 	h.generalFile.Store = cfg.Source
 	if cfg.Source != nil {

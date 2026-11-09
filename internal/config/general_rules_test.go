@@ -32,7 +32,7 @@ debug: []
 		t.Fatal(err)
 	}
 	file := GeneralRulesFile{Path: path}
-	settings := GeneralRules{MaxBodyBytes: Defaults().Firewall.MaxBodyBytes, GCPercent: 100, GCMemoryLimit: "off", ConnectionLimits: ConnectionLimitsFromConfig(Defaults()), WhitelistIPs: []string{"203.0.113.8", "::ffff:203.0.113.8", "2001:db8::8"}, WhitelistNetworks: []string{"203.0.113.9/24"}, AllowedCountries: []string{" Azerbaijan ", "Turkey", "turkey"}, IPCheckpoint: true, CountryCheckpoint: false, DDoSThreshold: 350}
+	settings := GeneralRules{MaxBodyBytes: Defaults().Firewall.MaxBodyBytes, MaxBufferedBytes: 512 << 20, GCPercent: 100, GCMemoryLimit: "off", ConnectionLimits: ConnectionLimitsFromConfig(Defaults()), WhitelistIPs: []string{"203.0.113.8", "::ffff:203.0.113.8", "2001:db8::8"}, WhitelistNetworks: []string{"203.0.113.9/24"}, AllowedCountries: []string{" Azerbaijan ", "Turkey", "turkey"}, IPCheckpoint: true, CountryCheckpoint: false, DDoSThreshold: 350}
 	if err := file.Save(settings); err != nil {
 		t.Fatal(err)
 	}
@@ -74,6 +74,7 @@ func TestGeneralRulesRejectInvalidInputsAndUnsafeFiles(t *testing.T) {
 		{DDoSThreshold: 0}, {DDoSThreshold: 1_000_000_001}, {DDoSThreshold: 200, UpstreamRequestRetryTimes: -1},
 	} {
 		rules.MaxBodyBytes = Defaults().Firewall.MaxBodyBytes
+		rules.MaxBufferedBytes = Defaults().Firewall.MaxBufferedBytes
 		rules.ConnectionLimits = ConnectionLimitsFromConfig(Defaults())
 		if _, err := rules.Normalize(); err == nil {
 			t.Fatalf("invalid settings accepted: %+v", rules)

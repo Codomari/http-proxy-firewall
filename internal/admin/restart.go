@@ -47,6 +47,12 @@ func (h *Handler) restartStatusLocked() restartSnapshot {
 		if err == nil && next != h.startup.Runtime {
 			result.Reasons = append(result.Reasons, "Garbage collection")
 		}
+		if rules.MaxBufferedBytes != h.startup.Firewall.MaxBufferedBytes {
+			result.Reasons = append(result.Reasons, "Firewall startup settings")
+		}
+		if rules.HTTP2Enable != h.startup.HTTP.HTTP2Enable || rules.IdleRequestTimeout != h.startup.HTTP.IdleTimeout.String() {
+			result.Reasons = append(result.Reasons, "HTTP listeners and timeouts")
+		}
 	}
 	result.Required = len(result.Reasons) > 0
 	return result

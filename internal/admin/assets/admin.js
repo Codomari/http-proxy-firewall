@@ -404,7 +404,7 @@
     byId("debug-empty").hidden = body.childElementCount > 0;
     text("debug-status", `${debug.enabled ? "Live" : "Capture disabled"} · ${number.format(body.childElementCount)} / 10,000 requests · pulls every 5 seconds${data.reset && body.childElementCount > data.entries.length ? " · log restarted or rotated" : ""}${debug.limited ? " · some log content was truncated" : ""}${debug.unparsed ? " · unparsed entries shown as text" : ""}`);
   }
-  const generalRules = {busy: false, dirty: false, key: "", available: false, upstreamAvailable: false, connectionsAvailable: false, bodyLimitCeiling: 0, controller: null};
+  const generalRules = {busy: false, dirty: false, key: "", available: false, upstreamAvailable: false, connectionsAvailable: false, bodyLimitCeiling: 0, bufferLimitCeiling: 0, controller: null};
   const connectionInputIDs = ["max-concurrent-requests", "upstream-max-connections", "upstream-allow-overflow", "upstream-max-overflow-connections"];
   function renderGeneralRules(data, saved = false) {
     renderRestart(data.restart);
@@ -412,8 +412,14 @@
     generalRules.upstreamAvailable = data.upstream_available;
     generalRules.connectionsAvailable = data.connection_limits_available;
     generalRules.bodyLimitCeiling = data.max_body_bytes_ceiling;
+    generalRules.bufferLimitCeiling = data.max_buffered_bytes_ceiling;
     byId("max-body-mib").max = String(data.max_body_bytes_ceiling / (1024 * 1024));
     byId("max-body-mib").disabled = generalRules.busy || !data.available;
+    byId("max-buffered-mib").max = String(data.max_buffered_bytes_ceiling / (1024 * 1024));
+    byId("max-buffered-mib").disabled = generalRules.busy || !data.available;
+    byId("http2-enable").disabled = generalRules.busy || !data.available;
+    byId("idle-request-timeout").disabled = generalRules.busy || !data.available;
+    text("max-buffered-status", `Active: ${number.format(data.active_max_buffered_bytes / (1024 * 1024))} MiB · ${data.max_buffered_bytes !== data.active_max_buffered_bytes ? "saved budget pending restart" : "budget changes require a restart"}`);
     for (const id of connectionInputIDs) byId(id).disabled = generalRules.busy || !data.connection_limits_available;
     byId("upstream-request-retry-times").disabled = generalRules.busy || !data.upstream_available;
     byId("general-rules-save").disabled = generalRules.busy || !data.available;
@@ -426,6 +432,9 @@
       byId("country-checkpoint").checked = data.country_checkpoint;
       byId("ddos-threshold").value = String(data.ddos_threshold);
       byId("max-body-mib").value = String(data.max_body_bytes / (1024 * 1024));
+      byId("max-buffered-mib").value = String(data.max_buffered_bytes / (1024 * 1024));
+      byId("http2-enable").checked = data.http2_enable;
+      byId("idle-request-timeout").value = data.idle_request_timeout;
       byId("gc-percent").value = String(data.gc_percent);
       byId("gc-memory-limit").value = data.gc_memory_limit;
       byId("upstream-request-retry-times").value = String(data.upstream_request_retry_times);
@@ -435,7 +444,7 @@
       byId("upstream-max-overflow-connections").value = String(data.upstream_max_overflow_connections);
       generalRules.key = key;
     }
-    text("general-rules-status", data.available ? "Global rules · loaded from YAML · GC changes require a restart; other controls apply immediately" : "General rules are unavailable.");
+    text("general-rules-status", data.available ? "Global rules · loaded from YAML · HTTP connection, buffer budget and GC changes require a restart; other controls apply immediately" : "General rules are unavailable.");
     byId("general-rules-overrides").hidden = !data.overrides.length;
     text("general-rules-overrides", data.overrides.length ? `Process environment overrides take precedence after a restart: ${data.overrides.join(", ")}.` : "");
   }
@@ -469,12 +478,22 @@
     const list = id => byId(id).value.split(/[,\r\n]+/).map(value => value.trim()).filter(Boolean);
     const settings = {whitelist_ips: list("whitelist-ips"), whitelist_networks: list("whitelist-networks"), allowed_countries: list("allowed-countries"), ip_checkpoint: byId("ip-checkpoint").checked, country_checkpoint: byId("country-checkpoint").checked, ddos_threshold: Number(byId("ddos-threshold").value)};
     settings.max_body_bytes = Number(byId("max-body-mib").value) * 1024 * 1024;
+    settings.max_buffered_bytes = Number(byId("max-buffered-mib").value) * 1024 * 1024;
+    settings.http2_enable = byId("http2-enable").checked;
+    settings.idle_request_timeout = byId("idle-request-timeout").value.trim();
     settings.gc_percent = Number(byId("gc-percent").value);
     settings.gc_memory_limit = byId("gc-memory-limit").value.trim();
     if (!Number.isSafeInteger(settings.max_body_bytes) || settings.max_body_bytes < 1 || settings.max_body_bytes > generalRules.bodyLimitCeiling) {
       generalRules.busy = false;
       byId("general-rules-save").disabled = false;
-      text("general-rules-error", `Enter a positive body size that fits within ${generalRules.bodyLimitCeiling.toLocaleString()} bytes. Fractions of a MiB must equal a whole number of bytes.`);
+      text("general-rules-error", `Enter a positive body size that fits within ${generalRules.bodyLimitCeiling.toLocaleString()} bytes. Save a larger buffer budget and restart before exceeding this limit. Fractions of a MiB must equal a whole number of bytes.`);
+      byId("general-rules-error").hidden = false;
+      return;
+    }
+    if (!Number.isSafeInteger(settings.max_buffered_bytes) || settings.max_buffered_bytes <= settings.max_body_bytes || settings.max_buffered_bytes > generalRules.bufferLimitCeiling) {
+      generalRules.busy = false;
+      byId("general-rules-save").disabled = false;
+      text("general-rules-error", `Enter a shared body buffer budget larger than the maximum request body and no more than ${generalRules.bufferLimitCeiling.toLocaleString()} bytes. Fractions of a MiB must equal a whole number of bytes.`);
       byId("general-rules-error").hidden = false;
       return;
     }
@@ -512,6 +531,9 @@
       for (const input of inputs) input.disabled = false;
       byId("upstream-request-retry-times").disabled = !generalRules.upstreamAvailable;
       byId("max-body-mib").disabled = !generalRules.available;
+      byId("max-buffered-mib").disabled = !generalRules.available;
+      byId("http2-enable").disabled = !generalRules.available;
+      byId("idle-request-timeout").disabled = !generalRules.available;
       for (const id of connectionInputIDs) byId(id).disabled = !generalRules.connectionsAvailable;
       byId("general-rules-save").disabled = !generalRules.available;
     }

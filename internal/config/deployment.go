@@ -11,6 +11,13 @@ func mergeDeploymentValues(destination, source map[string]string) error {
 	for key, value := range source {
 		values[key] = value
 	}
+	// Keep the old name as a fallback within each configuration layer.
+	if value, ok := values["PF_IDLE_TIMEOUT"]; ok {
+		if _, explicit := values["PF_IDLE_REQUEST_TIMEOUT"]; !explicit {
+			values["PF_IDLE_REQUEST_TIMEOUT"] = value
+		}
+		delete(values, "PF_IDLE_TIMEOUT")
+	}
 	for _, setting := range []struct {
 		legacy, current, flag string
 		boolean               bool

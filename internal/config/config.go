@@ -91,11 +91,13 @@ func fromEnvironment(values map[string]string) (Config, error) {
 }
 
 func (r *environment) applyHTTP(settings *HTTP) {
+	settings.HTTP2Enable = r.boolean("PF_HTTP2_ENABLE", settings.HTTP2Enable)
 	settings.Listen = r.text("PF_LISTEN", settings.Listen)
 	settings.TLSListen = r.text("PF_TLS_LISTEN", settings.TLSListen)
 	settings.ReadTimeout = r.duration("PF_READ_TIMEOUT", settings.ReadTimeout)
 	settings.WriteTimeout = r.duration("PF_WRITE_TIMEOUT", settings.WriteTimeout)
 	settings.IdleTimeout = r.duration("PF_IDLE_TIMEOUT", settings.IdleTimeout)
+	settings.IdleTimeout = r.duration("PF_IDLE_REQUEST_TIMEOUT", settings.IdleTimeout)
 	settings.MaxConnections = r.integer("PF_MAX_CONNECTIONS", settings.MaxConnections)
 	settings.MaxConcurrentRequests = r.integer("PF_MAX_CONCURRENT_REQUESTS", settings.MaxConcurrentRequests)
 }
@@ -213,6 +215,8 @@ func parseFlags(c Config, args []string, output io.Writer) (Config, error) {
 	flags.BoolVar(&c.Redis.Enabled, "enable-redis", c.Redis.Enabled, "enable optional Redis cache")
 	flags.StringVar(&c.Observability.PprofAddress, "pprof-addr", c.Observability.PprofAddress, "pprof address; empty disables")
 	flags.BoolVar(&c.TLS.Enabled, "tls", c.TLS.Enabled, "enable automatic HTTPS")
+	flags.BoolVar(&c.HTTP.HTTP2Enable, "http2-enable", c.HTTP.HTTP2Enable, "enable HTTP/2 over HTTPS")
+	flags.DurationVar(&c.HTTP.IdleTimeout, "idle-request-timeout", c.HTTP.IdleTimeout, "idle client keepalive timeout")
 	flags.StringVar(&c.TLS.CertificateFile, "tls-cert", c.TLS.CertificateFile, "static TLS certificate PEM file")
 	flags.StringVar(&c.TLS.PrivateKeyFile, "tls-key", c.TLS.PrivateKeyFile, "static TLS private key PEM file")
 	flags.BoolVar(&c.TLS.AllowLegacyClients, "tls-legacy", c.TLS.AllowLegacyClients, "allow TLS 1.0/1.1 clients")

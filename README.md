@@ -1,6 +1,6 @@
 # http-proxy-firewall
 
-Version **0.3.45** · [Changelog](CHANGELOG.md) · [MIT license](LICENSE)
+Version **0.3.48** · [Changelog](CHANGELOG.md) · [MIT license](LICENSE)
 
 A reverse proxy and Layer 7 firewall that sits in front of your web applications. It checks requests before forwarding them, adds a cookie checkpoint during traffic spikes, and provides an embedded admin dashboard.
 
@@ -146,7 +146,7 @@ The names below work both as process environment variables and as `env[].key` en
 | Garbage collection | `GOGC`, `GOMEMLIMIT`; YAML and admin changes take effect after an application restart. |
 | Connection and request limits | `PF_MAX_CONNECTIONS`, `PF_MAX_CONCURRENT_REQUESTS`, `PF_UPSTREAM_MAX_CONNECTIONS` |
 | Temporary upstream burst capacity | `PF_UPSTREAM_ALLOW_OVERFLOW`, `PF_UPSTREAM_MAX_OVERFLOW_CONNECTIONS`; editable in [General settings](#general-settings). |
-| Incoming timeouts | `PF_READ_TIMEOUT`, `PF_WRITE_TIMEOUT`, `PF_IDLE_TIMEOUT` |
+| Incoming protocols and timeouts | `PF_HTTP2_ENABLE`, `PF_READ_TIMEOUT`, `PF_WRITE_TIMEOUT`, `PF_IDLE_REQUEST_TIMEOUT` (`PF_IDLE_TIMEOUT` is a legacy fallback) |
 | Upstream timeouts | `PF_UPSTREAM_READ_TIMEOUT`, `PF_UPSTREAM_WRITE_TIMEOUT`, `PF_UPSTREAM_IDLE_TIMEOUT` |
 | Upstream connection retries | `PF_UPSTREAM_REQUEST_RETRY_TIMES` (`3` additional retries; `0` disables) |
 | Optional Redis storage | `PF_ENABLE_REDIS`, `REDIS_ADDRESS`, `REDIS_PASSWORD`, `REDIS_DB`, `REDIS_TIMEOUT`, `REDIS_QUEUE_SIZE`, `REDIS_WORKERS` |
@@ -164,7 +164,9 @@ env:
 
 Unmatched hostnames use `PF_PROXY_TO`. Each configured origin has its own shared connection pool.
 
-To use a static TLS certificate, supply **both** `PF_TLS_CERT_FILE` and `PF_TLS_KEY_FILE`; this skips ACME. TLS defaults to enabled on port 443 with TLS 1.2 as the minimum. Legacy TLS 1.0/1.1 requires `PF_TLS_ALLOW_LEGACY=true` or `--tls-legacy`. HTTPS negotiates HTTP/2 (`h2`) or HTTP/1.1, using the same firewall, routes, admin APIs and streamed responses. Plain HTTP and HTTP/1 upgrades retain their native handling. HTTP/3 requires a frontend proxy.
+To use a static TLS certificate, supply **both** `PF_TLS_CERT_FILE` and `PF_TLS_KEY_FILE`; this skips ACME. TLS defaults to enabled on port 443 with TLS 1.2 as the minimum. Legacy TLS 1.0/1.1 requires `PF_TLS_ALLOW_LEGACY=true` or `--tls-legacy`. HTTP/1.1 over HTTP and HTTPS remains available. HTTP/2 is disabled by default; set `PF_HTTP2_ENABLE=true` or `--http2-enable` to enable HTTPS negotiation of `h2` through the same firewall, routes, admin APIs and streamed responses. The service has no QUIC/HTTP/3 listener and removes upstream `Alt-Svc` advertisements. Certificate renewal retains ACME's required TLS negotiation.
+
+Idle client keepalive connections close after **15 seconds** by default. Set `PF_IDLE_REQUEST_TIMEOUT` (for example, `15s`) or `--idle-request-timeout` to change the wait for the next request on HTTP/HTTPS connections. This setting also applies to HTTP/2 when enabled and to the loopback pprof listener. New connections and incomplete headers have a deadline of at most ten seconds, capped by the idle timeout. Active uploads, responses and upgraded tunnels retain their existing read/write deadlines; upstream keepalive uses `PF_UPSTREAM_IDLE_TIMEOUT` separately. `PF_IDLE_TIMEOUT` remains a fallback when the new name is absent in the same configuration layer.
 
 Before obtaining an automatic certificate, the server excludes hostnames marked **Behind CloudFlare** by the current domain rules and checks `PF_TLS_HOSTS`. It then sends HEAD to `http://hostname/<PF_ADMIN_URI>/dns/test`, making at most three attempts with a one-second timeout per HTTP request. This public, HEAD-only endpoint returns `X-DNS-SIGNATURE` and records the random signature in a shared, bounded hostname map. A matching fresh signature proves the request reached this process; redirects and environment HTTP proxies are not used.
 
@@ -230,7 +232,7 @@ Open **TEST PAGES** to inspect status pages in a new tab. With the default admin
 
 Open **Rules → General settings**, edit the fields, then press **Save general settings**.
 
-Parameter controls are grouped under **Request Limits**, **DDoS Protection**, **Upstream** and **Garbage Collection**. The whitelist lists remain at the top of the form.
+Parameter controls are grouped under **Request Limits**, **HTTP Connections**, **DDoS Protection**, **Upstream** and **Garbage Collection**. The whitelist lists remain at the top of the form.
 
 | Admin control | Saved `env` key | Shipped default |
 | --- | --- | --- |
@@ -241,6 +243,9 @@ Parameter controls are grouped under **Request Limits**, **DDoS Protection**, **
 | Apply cookie checkpoint to whitelisted countries | `IP_FILTER_COUNTRIES_CHECKPOINT` | `true` |
 | DDoS threshold in requests/second per hostname | `DOS_DETECTOR_HOSTNAME_REQUEST_THRESHOLD` | `200` |
 | Maximum request body (MiB) | `CVE_MITIGATOR_MAX_BODY_BYTES` | `200` MiB (`209715200` bytes) |
+| Shared body buffer budget (MiB) | `PF_MAX_BUFFERED_BYTES` | `256` MiB (`268435456` bytes); requires restart |
+| Enable HTTP/2 over HTTPS | `PF_HTTP2_ENABLE` | `false`; requires restart |
+| Idle request timeout | `PF_IDLE_REQUEST_TIMEOUT` | `15s`; requires restart |
 | GC heap growth target (%) | `GOGC` | `100`; enter `-1` in admin to save `off` |
 | GC memory target | `GOMEMLIMIT` | `off` |
 | Upstream request retries | `PF_UPSTREAM_REQUEST_RETRY_TIMES` | `3` additional retries; `0` disables |
@@ -251,7 +256,11 @@ Parameter controls are grouped under **Request Limits**, **DDoS Protection**, **
 
 Enter IPs, CIDR networks and English country names using commas or newlines. Each whitelist accepts up to 512 entries. The DDoS threshold accepts integers from 1 to 1,000,000,000 and uses a ten-second sampling window.
 
-The body-size control limits the complete request, including multipart boundaries, form fields and all files. One MiB is 1,048,576 bytes. Saving changes the limit for new requests immediately; an upload already being inspected keeps its original limit. The byte count must be positive and smaller than the active `PF_MAX_BUFFERED_BYTES` budget, which defaults to 256 MiB. Increase that budget in YAML and restart before choosing a larger body limit. Requests beyond the limit receive a designed **413 Request Entity Too Large** page showing the applied limit and how to reduce the upload. It uses the same 11-language selector as the 409 pages. Forms rejected for too many fields, files or nested values get an explanation specific to that limit. Upstream responses retain their own bodies and status codes.
+The body-size control limits the complete request, including multipart boundaries, form fields and all files. One MiB is 1,048,576 bytes. Saving changes the limit for new requests immediately; an upload already being inspected keeps its original limit. The byte count must be positive and smaller than both the active and saved shared body buffer budgets. To exceed the active budget, increase **Shared body buffer budget (MiB)**, save and use **Restart app** before choosing a larger body limit. Requests beyond the body limit receive a designed **413 Request Entity Too Large** page showing the applied limit and how to reduce the upload. It uses the same 11-language selector as the 409 pages. Forms rejected for too many fields, files or nested values get an explanation specific to that limit. Upstream responses retain their own bodies and status codes.
+
+The shared body buffer budget covers inspected request bodies across all clients and hostnames. The control shows the active budget and whether a saved change is pending restart. It must be larger than the maximum request body; fractions of a MiB must represent a whole number of bytes. Unknown-length uploads reserve the full per-request body limit plus one byte, so overlapping uploads may exhaust the shared budget and receive **503 Service Unavailable**. Choose a budget with enough RAM left for TLS, connections, framework buffers and other process memory.
+
+**HTTP Connections** controls are saved to YAML and apply after **Restart app**. Leave HTTP/2 unchecked for HTTP/1.1 over HTTP and HTTPS. The idle request timeout accepts a positive duration such as `15s` or `500ms`; it closes idle keepalive connections while preserving active request read/write deadlines.
 
 GC controls are saved to YAML and activate **Restart app** when the effective values change. They apply at startup. You can also edit the override directly:
 
@@ -374,7 +383,7 @@ All paths below are relative to `/<PF_ADMIN_URI>`, which defaults to `/__pf/__ad
 
 Editing General settings pauses background replacement of unsaved form fields. Save errors are shown in the panel; if YAML was saved but runtime application failed, the API reports that a restart is required.
 
-The general-settings JSON also accepts `max_body_bytes`, `gc_percent` (`-1` saves `GOGC=off`) and `gc_memory_limit` (for example `512MiB` or `off`). Older clients can omit these fields to preserve their saved values. Responses include `max_body_bytes_ceiling` and restart state; limits are validated before YAML or running settings change.
+The general-settings JSON also accepts `max_body_bytes`, `max_buffered_bytes`, `http2_enable` (boolean), `idle_request_timeout` (duration string), `gc_percent` (`-1` saves `GOGC=off`) and `gc_memory_limit` (for example `512MiB` or `off`). Older clients can omit these fields to preserve their saved values. Responses include `max_body_bytes_ceiling` (the current live body ceiling), `max_buffered_bytes_ceiling`, `active_max_buffered_bytes` and restart state; limits are validated before YAML or running settings change. `max_buffered_bytes`, `http2_enable` and `idle_request_timeout` are saved to their corresponding `PF_` keys and apply after restart.
 
 </details>
 

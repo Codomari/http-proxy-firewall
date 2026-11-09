@@ -161,17 +161,21 @@ func (s *Server) configureHTTPServer(upstream *proxy.Handler) {
 			ctx.Request.Header.SetMethod(extensionMethod)
 		}
 		handler(ctx)
+		// Origins may advertise protocols that this listener does not serve.
+		ctx.Response.Header.Del("Alt-Svc")
 		ctx.Response.Header.SetServer(config.ServerName)
 	}
 	// HeaderReceived runs after complete headers and extends only the body
-	// deadline. Slow headers retain the original ten-second deadline.
-	fast.ReadTimeout = 10 * time.Second
+	// deadline. Slow headers use the shorter of ten seconds and the idle timeout.
+	fast.ReadTimeout = min(10*time.Second, s.cfg.HTTP.IdleTimeout)
 	fast.HeaderReceived = func(*fasthttp.RequestHeader) fasthttp.RequestConfig {
 		return fasthttp.RequestConfig{ReadTimeout: s.cfg.HTTP.ReadTimeout, WriteTimeout: s.cfg.HTTP.WriteTimeout}
 	}
 	fast.Logger = &safeLogger{logger: s.logger, hostname: s.connectionHostname}
 	fast.SecureErrorLogMessage = true
-	s.configureHTTP2(fast)
+	if s.cfg.HTTP.HTTP2Enable {
+		s.configureHTTP2(fast)
+	}
 }
 
 func newAdminServer(address string) (*http.Server, error) {
@@ -187,5 +191,5 @@ func newAdminServer(address string) (*http.Server, error) {
 	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
 	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
-	return &http.Server{Addr: address, Handler: mux, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: time.Minute}, nil
+	return &http.Server{Addr: address, Handler: mux, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 15 * time.Second}, nil
 }

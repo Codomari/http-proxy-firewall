@@ -285,7 +285,9 @@ func hasToken(value, want string) bool {
 }
 
 func validUpgradeProtocol(protocol string) bool {
-	if protocol == "" {
+	// HTTP/2 is negotiated by the HTTPS listener when explicitly enabled.
+	// Never tunnel h2c to an origin around the firewall's per-request checks.
+	if protocol == "" || strings.EqualFold(protocol, "h2c") {
 		return false
 	}
 	for _, ch := range protocol {

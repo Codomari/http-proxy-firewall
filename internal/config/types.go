@@ -20,6 +20,7 @@ type Config struct {
 }
 
 type HTTP struct {
+	HTTP2Enable           bool
 	Listen                string
 	TLSListen             string
 	ReadTimeout           time.Duration

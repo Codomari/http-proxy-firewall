@@ -113,6 +113,9 @@ func New(cfg config.Config, engine *firewall.Engine, upstream *proxy.Handler, lo
 	if err != nil {
 		return nil, err
 	}
+	if s.admin != nil {
+		s.admin.IdleTimeout = cfg.HTTP.IdleTimeout
+	}
 	return s, nil
 }
 
@@ -304,7 +307,10 @@ func (s *Server) tlsConfiguration() (*tls.Config, error) {
 	if s.cfg.TLS.AllowLegacyClients {
 		minimum = tls.VersionTLS10
 	}
-	result := &tls.Config{MinVersion: minimum, NextProtos: []string{"h2", "http/1.1"}}
+	result := &tls.Config{MinVersion: minimum, NextProtos: []string{"http/1.1"}}
+	if s.cfg.HTTP.HTTP2Enable {
+		result.NextProtos = append([]string{"h2"}, result.NextProtos...)
+	}
 	result.GetConfigForClient = func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
 		s.rememberHostname(hello.Conn.LocalAddr(), hello.Conn.RemoteAddr(), hello.ServerName)
 		return nil, nil

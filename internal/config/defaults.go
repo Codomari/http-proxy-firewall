@@ -14,7 +14,7 @@ func Defaults() Config {
 		Runtime: Runtime{GCPercent: 100, MemoryLimitBytes: 1<<63 - 1},
 		HTTP: HTTP{
 			Listen: "0.0.0.0:80", TLSListen: "0.0.0.0:443",
-			ReadTimeout: 10 * time.Minute, WriteTimeout: 10 * time.Minute, IdleTimeout: time.Minute,
+			ReadTimeout: 10 * time.Minute, WriteTimeout: 10 * time.Minute, IdleTimeout: 15 * time.Second,
 			MaxConnections: 10000, MaxConcurrentRequests: 256,
 		},
 		Proxy: Proxy{

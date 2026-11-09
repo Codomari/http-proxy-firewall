@@ -12,6 +12,9 @@ import (
 	"github.com/gofiber/fiber/v3"
 )
 
+// Byte counts exposed to the browser must round-trip as exact JSON integers.
+const maxAdminByteCount int64 = 1<<53 - 1
+
 type generalRulesSource interface {
 	SetGeneralRules(config.GeneralRules) error
 }
@@ -31,6 +34,8 @@ func (h *Handler) SetConnectionSettings(source connectionSettingsSource) { h.con
 type generalRulesSnapshot struct {
 	config.GeneralRules
 	MaxBodyBytesCeiling       int64           `json:"max_body_bytes_ceiling"`
+	MaxBufferedBytesCeiling   int64           `json:"max_buffered_bytes_ceiling"`
+	ActiveMaxBufferedBytes    int64           `json:"active_max_buffered_bytes"`
 	Restart                   restartSnapshot `json:"restart"`
 	Available                 bool            `json:"available"`
 	Overrides                 []string        `json:"overrides"`
@@ -45,6 +50,8 @@ func (h *Handler) generalRulesSnapshot() (generalRulesSnapshot, error) {
 	}
 	result := generalRulesSnapshot{GeneralRules: rules, Available: h.general != nil, Overrides: h.generalFile.ProcessOverrides(), UpstreamAvailable: h.upstream != nil, ConnectionLimitsAvailable: h.connections != nil}
 	result.MaxBodyBytesCeiling = h.bodyLimitCeiling
+	result.MaxBufferedBytesCeiling = maxAdminByteCount
+	result.ActiveMaxBufferedBytes = h.startup.Firewall.MaxBufferedBytes
 	result.Restart = h.restartStatusLocked()
 	return result, nil
 }
@@ -79,6 +86,9 @@ func (h *Handler) serveGeneralRules(c fiber.Ctx) error {
 		}
 		var input struct {
 			MaxBodyBytes                   *int64   `json:"max_body_bytes"`
+			MaxBufferedBytes               *int64   `json:"max_buffered_bytes"`
+			HTTP2Enable                    *bool    `json:"http2_enable"`
+			IdleRequestTimeout             *string  `json:"idle_request_timeout"`
 			GCPercent                      *int     `json:"gc_percent"`
 			GCMemoryLimit                  *string  `json:"gc_memory_limit"`
 			WhitelistIPs                   []string `json:"whitelist_ips"`
@@ -101,13 +111,24 @@ func (h *Handler) serveGeneralRules(c fiber.Ctx) error {
 		}
 		h.generalMu.Lock()
 		defer h.generalMu.Unlock()
-		// Older API clients omit this field; preserve its existing YAML value.
+		// Older API clients omit newer fields; preserve their existing YAML values.
 		previous, err := h.generalFile.Read()
 		if err != nil {
 			return c.Status(503).JSON(fiber.Map{"error": "Unable to read general settings YAML"})
 		}
 		retries := previous.UpstreamRequestRetryTimes
 		maxBodyBytes := previous.MaxBodyBytes
+		maxBufferedBytes := previous.MaxBufferedBytes
+		http2Enable, idleRequestTimeout := previous.HTTP2Enable, previous.IdleRequestTimeout
+		if input.HTTP2Enable != nil {
+			http2Enable = *input.HTTP2Enable
+		}
+		if input.IdleRequestTimeout != nil {
+			idleRequestTimeout = *input.IdleRequestTimeout
+			if idleRequestTimeout == "" {
+				return c.Status(400).JSON(fiber.Map{"error": "Idle request timeout must be a positive duration such as 15s"})
+			}
+		}
 		gcPercent, gcMemoryLimit := previous.GCPercent, previous.GCMemoryLimit
 		if input.GCPercent != nil {
 			gcPercent = *input.GCPercent
@@ -118,8 +139,14 @@ func (h *Handler) serveGeneralRules(c fiber.Ctx) error {
 		if input.MaxBodyBytes != nil {
 			maxBodyBytes = *input.MaxBodyBytes
 		}
+		if input.MaxBufferedBytes != nil {
+			maxBufferedBytes = *input.MaxBufferedBytes
+		}
+		if maxBufferedBytes <= 0 || maxBufferedBytes > maxAdminByteCount {
+			return c.Status(400).JSON(fiber.Map{"error": fmt.Sprintf("Shared body buffer budget must be between 1 and %d bytes", maxAdminByteCount)})
+		}
 		if maxBodyBytes <= 0 || maxBodyBytes > h.bodyLimitCeiling {
-			return c.Status(400).JSON(fiber.Map{"error": fmt.Sprintf("Maximum request body size must be between 1 and %d bytes to fit the shared inspection-buffer budget", h.bodyLimitCeiling)})
+			return c.Status(400).JSON(fiber.Map{"error": fmt.Sprintf("Maximum request body size must be between 1 and %d bytes to fit the active shared inspection-buffer budget. Save a larger buffer budget and restart before increasing the body size beyond this limit", h.bodyLimitCeiling)})
 		}
 		limits := previous.ConnectionLimits
 		if input.MaxConcurrentRequests != nil || input.UpstreamMaxConnections != nil || input.UpstreamAllowOverflow != nil || input.UpstreamMaxOverflowConnections != nil {
@@ -145,7 +172,7 @@ func (h *Handler) serveGeneralRules(c fiber.Ctx) error {
 			}
 			retries = *input.UpstreamRequestRetryTimes
 		}
-		rules, err := (config.GeneralRules{ConnectionLimits: limits, MaxBodyBytes: maxBodyBytes, GCPercent: gcPercent, GCMemoryLimit: gcMemoryLimit, WhitelistIPs: input.WhitelistIPs, WhitelistNetworks: input.WhitelistNetworks, AllowedCountries: input.AllowedCountries, IPCheckpoint: *input.IPCheckpoint, CountryCheckpoint: *input.CountryCheckpoint, DDoSThreshold: *input.DDoSThreshold, UpstreamRequestRetryTimes: retries}).Normalize()
+		rules, err := (config.GeneralRules{ConnectionLimits: limits, MaxBodyBytes: maxBodyBytes, MaxBufferedBytes: maxBufferedBytes, HTTP2Enable: http2Enable, IdleRequestTimeout: idleRequestTimeout, GCPercent: gcPercent, GCMemoryLimit: gcMemoryLimit, WhitelistIPs: input.WhitelistIPs, WhitelistNetworks: input.WhitelistNetworks, AllowedCountries: input.AllowedCountries, IPCheckpoint: *input.IPCheckpoint, CountryCheckpoint: *input.CountryCheckpoint, DDoSThreshold: *input.DDoSThreshold, UpstreamRequestRetryTimes: retries}).Normalize()
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 		}
