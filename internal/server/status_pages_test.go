@@ -53,7 +53,18 @@ func TestStatusPagesEmbedAllLanguagesAndGame(t *testing.T) {
 			if !strings.Contains(page.tlsHostnameRequired, messages.TLSHostnameTitle) || !strings.Contains(page.tlsHostnameRequired, messages.TLSHostnameMessage) {
 				t.Fatal("TLS hostname translations missing")
 			}
-			for _, body := range []string{page.restarting, page.blacklisted, page.tlsHostnameRequired, page.requestTooLarge, page.inputTooLarge} {
+			for _, tc := range []struct{ body, status, title, message string }{
+				{page.serverError, "500", messages.ServerErrorTitle, messages.ServerErrorMessage},
+				{page.badGateway, "502", messages.BadGatewayTitle, messages.BadGatewayMessage},
+				{page.unavailable, "503", messages.UnavailableTitle, messages.UnavailableMessage},
+			} {
+				for _, want := range []string{"<small>" + tc.status + "</small>", tc.title, tc.message} {
+					if !strings.Contains(tc.body, want) {
+						t.Fatalf("%s translation missing %q", tc.status, want)
+					}
+				}
+			}
+			for _, body := range []string{page.restarting, page.blacklisted, page.tlsHostnameRequired, page.requestTooLarge, page.inputTooLarge, page.serverError, page.badGateway, page.unavailable} {
 				if !strings.Contains(body, `id="status-language"`) || strings.Count(body, "<option value=") != 11 || !strings.Contains(body, statusLanguageJS) || !strings.Contains(body, statusLanguageCSS) {
 					t.Fatal("embedded language selector missing")
 				}

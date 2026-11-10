@@ -31,6 +31,12 @@ type statusMessages struct {
 	BodyLimitTitle     string `json:"body_limit_title"`
 	BodyLimitMessage   string `json:"body_limit_message"`
 	InputLimitMessage  string `json:"input_limit_message"`
+	ServerErrorTitle   string `json:"server_error_title"`
+	ServerErrorMessage string `json:"server_error_message"`
+	BadGatewayTitle    string `json:"bad_gateway_title"`
+	BadGatewayMessage  string `json:"bad_gateway_message"`
+	UnavailableTitle   string `json:"unavailable_title"`
+	UnavailableMessage string `json:"unavailable_message"`
 	GameTitle          string `json:"game_title"`
 	GameRules          string `json:"game_rules"`
 	RestartGame        string `json:"restart_game"`
@@ -45,7 +51,7 @@ type statusMessages struct {
 	CellLabel          string `json:"cell_label"`
 }
 
-type statusPage struct{ language, restarting, blacklisted, tlsHostnameRequired, requestTooLarge, inputTooLarge string }
+type statusPage struct{ language, restarting, blacklisted, tlsHostnameRequired, requestTooLarge, inputTooLarge, serverError, badGateway, unavailable string }
 
 var statusPages = buildStatusPages()
 
@@ -105,6 +111,9 @@ func buildStatusPages() map[string]statusPage {
 			tlsHostnameRequired: errorPage("tls-hostname", "409", "tls_hostname_title", "tls_hostname_message", messages.TLSHostnameTitle, messages.TLSHostnameMessage),
 			requestTooLarge:     errorPage("request-too-large", "413", "body_limit_title", "body_limit_message", messages.BodyLimitTitle, messages.BodyLimitMessage),
 			inputTooLarge:       errorPage("request-too-large", "413", "body_limit_title", "input_limit_message", messages.BodyLimitTitle, messages.InputLimitMessage),
+			serverError:         errorPage("server-error", "500", "server_error_title", "server_error_message", messages.ServerErrorTitle, messages.ServerErrorMessage),
+			badGateway:          errorPage("bad-gateway", "502", "bad_gateway_title", "bad_gateway_message", messages.BadGatewayTitle, messages.BadGatewayMessage),
+			unavailable:         errorPage("service-unavailable", "503", "unavailable_title", "unavailable_message", messages.UnavailableTitle, messages.UnavailableMessage),
 		}
 	}
 	return pages

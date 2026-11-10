@@ -77,6 +77,13 @@ func (h *Handler) upgrade(c fiber.Ctx, request *fasthttp.Request, protocol strin
 		}
 	}
 	stripResponseHopHeaders(&c.Response().Header)
+	if page := h.statusPages[response.StatusCode]; page != nil {
+		// Closing the socket first prevents Body.Close from draining an
+		// arbitrarily large or stalled rejected upgrade response.
+		_ = conn.Close()
+		_ = response.Body.Close()
+		return page(c)
+	}
 	if !h.track(conn) {
 		_ = conn.Close()
 		_ = response.Body.Close()

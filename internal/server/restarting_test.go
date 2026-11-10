@@ -39,7 +39,7 @@ func TestRestartScreenIsEmbeddedAndOnlyUsedDuringFirewallShutdown(t *testing.T) 
 	}
 	body, _ := io.ReadAll(response.Body)
 	response.Body.Close()
-	if response.StatusCode != 503 || string(body) != "backend unavailable" {
+	if response.StatusCode != 503 || !strings.Contains(string(body), `data-page="service-unavailable"`) || strings.Contains(string(body), `data-page="restart"`) {
 		t.Fatal("backend errors were mistaken for firewall restarts")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

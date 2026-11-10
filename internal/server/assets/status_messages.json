@@ -25,7 +25,13 @@
     "language_label": "Language",
     "body_limit_title": "Request Entity Too Large",
     "body_limit_message": "Your upload or form is larger than this website allows. The maximum total size is {limit}. Use smaller files or send fewer files at a time, then try again.",
-    "input_limit_message": "This form contains too many fields, files or nested values. Send fewer items or simplify the form, then try again."
+    "input_limit_message": "This form contains too many fields, files or nested values. Send fewer items or simplify the form, then try again.",
+    "server_error_title": "Something went wrong",
+    "server_error_message": "The website could not complete your request because of a server error. Please try again later.",
+    "bad_gateway_title": "The website is temporarily unavailable",
+    "bad_gateway_message": "The website server could not be reached or returned an invalid response. Please try again in a few moments.",
+    "unavailable_title": "The service is temporarily unavailable",
+    "unavailable_message": "The website is busy or temporarily unable to handle your request. Please wait a little and try again."
   },
   "az": {
     "restart_title": "Server yenidən başladılır",
@@ -53,7 +59,13 @@
     "language_label": "Dil",
     "body_limit_title": "Sorğunun həcmi çox böyükdür",
     "body_limit_message": "Yüklədiyiniz faylların və ya formanın həcmi bu saytın icazə verdiyi həddi aşır. Maksimum ümumi həcm {limit}-dır. Daha kiçik fayllar seçin və ya eyni anda daha az fayl göndərib yenidən cəhd edin.",
-    "input_limit_message": "Bu formada həddindən artıq çox sahə, fayl və ya iç-içə dəyər var. Daha az element göndərin və ya formanı sadələşdirib yenidən cəhd edin."
+    "input_limit_message": "Bu formada həddindən artıq çox sahə, fayl və ya iç-içə dəyər var. Daha az element göndərin və ya formanı sadələşdirib yenidən cəhd edin.",
+    "server_error_title": "Xəta baş verdi",
+    "server_error_message": "Server xətası səbəbindən sayt sorğunuzu yerinə yetirə bilmədi. Zəhmət olmasa, daha sonra yenidən cəhd edin.",
+    "bad_gateway_title": "Sayt müvəqqəti olaraq əlçatan deyil",
+    "bad_gateway_message": "Saytın serverinə qoşulmaq mümkün olmadı və ya server etibarsız cavab qaytardı. Zəhmət olmasa, bir az sonra yenidən cəhd edin.",
+    "unavailable_title": "Xidmət müvəqqəti olaraq əlçatan deyil",
+    "unavailable_message": "Sayt hazırda yüklənib və ya sorğunuzu müvəqqəti olaraq emal edə bilmir. Bir az gözləyin və yenidən cəhd edin."
   },
   "tr": {
     "restart_title": "Sunucu yeniden başlatılıyor",
@@ -81,7 +93,13 @@
     "language_label": "Dil",
     "body_limit_title": "İstek boyutu çok büyük",
     "body_limit_message": "Yüklediğiniz dosyalar veya form bu sitenin izin verdiği boyutu aşıyor. İzin verilen toplam boyut en fazla {limit}. Daha küçük dosyalar kullanın veya aynı anda daha az dosya göndererek yeniden deneyin.",
-    "input_limit_message": "Bu formda çok fazla alan, dosya veya iç içe değer var. Daha az öğe gönderin veya formu sadeleştirip yeniden deneyin."
+    "input_limit_message": "Bu formda çok fazla alan, dosya veya iç içe değer var. Daha az öğe gönderin veya formu sadeleştirip yeniden deneyin.",
+    "server_error_title": "Bir hata oluştu",
+    "server_error_message": "Bir sunucu hatası nedeniyle site isteğinizi tamamlayamadı. Lütfen daha sonra tekrar deneyin.",
+    "bad_gateway_title": "Siteye geçici olarak erişilemiyor",
+    "bad_gateway_message": "Sitenin sunucusuna ulaşılamadı veya sunucu geçersiz bir yanıt verdi. Lütfen biraz sonra tekrar deneyin.",
+    "unavailable_title": "Hizmet geçici olarak kullanılamıyor",
+    "unavailable_message": "Site şu anda yoğun veya isteğinizi geçici olarak işleyemiyor. Lütfen biraz bekleyip tekrar deneyin."
   },
   "ru": {
     "restart_title": "Сервер перезапускается",
@@ -109,7 +127,13 @@
     "language_label": "Язык",
     "body_limit_title": "Слишком большой объём запроса",
     "body_limit_message": "Размер загружаемых файлов или формы превышает допустимый для этого сайта. Максимальный общий размер — {limit}. Уменьшите файлы или отправляйте их меньшими группами и попробуйте снова.",
-    "input_limit_message": "В этой форме слишком много полей, файлов или вложенных значений. Отправьте меньше элементов или упростите форму и попробуйте снова."
+    "input_limit_message": "В этой форме слишком много полей, файлов или вложенных значений. Отправьте меньше элементов или упростите форму и попробуйте снова.",
+    "server_error_title": "Произошла ошибка",
+    "server_error_message": "Сайт не смог выполнить ваш запрос из-за ошибки сервера. Пожалуйста, попробуйте позже.",
+    "bad_gateway_title": "Сайт временно недоступен",
+    "bad_gateway_message": "Не удалось связаться с сервером сайта, или сервер вернул некорректный ответ. Пожалуйста, попробуйте через некоторое время.",
+    "unavailable_title": "Сервис временно недоступен",
+    "unavailable_message": "Сайт перегружен или временно не может обработать ваш запрос. Подождите немного и попробуйте снова."
   },
   "uk": {
     "restart_title": "Сервер перезапускається",
@@ -137,7 +161,13 @@
     "language_label": "Мова",
     "body_limit_title": "Завеликий обсяг запиту",
     "body_limit_message": "Розмір завантажуваних файлів або форми перевищує дозволений для цього сайту. Максимальний загальний розмір — {limit}. Зменште файли або надсилайте їх меншими групами та спробуйте ще раз.",
-    "input_limit_message": "У цій формі забагато полів, файлів або вкладених значень. Надішліть менше елементів або спростіть форму та спробуйте ще раз."
+    "input_limit_message": "У цій формі забагато полів, файлів або вкладених значень. Надішліть менше елементів або спростіть форму та спробуйте ще раз.",
+    "server_error_title": "Сталася помилка",
+    "server_error_message": "Сайт не зміг виконати ваш запит через помилку сервера. Будь ласка, спробуйте пізніше.",
+    "bad_gateway_title": "Сайт тимчасово недоступний",
+    "bad_gateway_message": "Не вдалося зв’язатися із сервером сайту, або сервер повернув некоректну відповідь. Будь ласка, спробуйте трохи згодом.",
+    "unavailable_title": "Сервіс тимчасово недоступний",
+    "unavailable_message": "Сайт перевантажений або тимчасово не може обробити ваш запит. Зачекайте трохи та спробуйте ще раз."
   },
   "de": {
     "restart_title": "Server wird neu gestartet",
@@ -165,7 +195,13 @@
     "language_label": "Sprache",
     "body_limit_title": "Anfrage zu groß",
     "body_limit_message": "Ihre hochgeladenen Dateien oder das Formular überschreiten die für diese Website erlaubte Größe. Die maximale Gesamtgröße beträgt {limit}. Verwenden Sie kleinere Dateien oder senden Sie weniger Dateien auf einmal und versuchen Sie es erneut.",
-    "input_limit_message": "Dieses Formular enthält zu viele Felder, Dateien oder verschachtelte Werte. Senden Sie weniger Elemente oder vereinfachen Sie das Formular und versuchen Sie es erneut."
+    "input_limit_message": "Dieses Formular enthält zu viele Felder, Dateien oder verschachtelte Werte. Senden Sie weniger Elemente oder vereinfachen Sie das Formular und versuchen Sie es erneut.",
+    "server_error_title": "Ein Fehler ist aufgetreten",
+    "server_error_message": "Die Website konnte Ihre Anfrage wegen eines Serverfehlers nicht bearbeiten. Bitte versuchen Sie es später erneut.",
+    "bad_gateway_title": "Die Website ist vorübergehend nicht erreichbar",
+    "bad_gateway_message": "Der Server der Website ist nicht erreichbar oder hat eine ungültige Antwort gesendet. Bitte versuchen Sie es in Kürze erneut.",
+    "unavailable_title": "Der Dienst ist vorübergehend nicht verfügbar",
+    "unavailable_message": "Die Website ist ausgelastet oder kann Ihre Anfrage vorübergehend nicht bearbeiten. Bitte warten Sie kurz und versuchen Sie es erneut."
   },
   "it": {
     "restart_title": "Riavvio del server in corso",
@@ -193,7 +229,13 @@
     "language_label": "Lingua",
     "body_limit_title": "Richiesta troppo grande",
     "body_limit_message": "I file caricati o il modulo superano le dimensioni consentite da questo sito. La dimensione totale massima è {limit}. Usa file più piccoli o invia meno file alla volta, poi riprova.",
-    "input_limit_message": "Questo modulo contiene troppi campi, file o valori annidati. Invia meno elementi o semplifica il modulo, poi riprova."
+    "input_limit_message": "Questo modulo contiene troppi campi, file o valori annidati. Invia meno elementi o semplifica il modulo, poi riprova.",
+    "server_error_title": "Si è verificato un errore",
+    "server_error_message": "Il sito non ha potuto completare la richiesta a causa di un errore del server. Riprova più tardi.",
+    "bad_gateway_title": "Il sito è temporaneamente irraggiungibile",
+    "bad_gateway_message": "Non è stato possibile contattare il server del sito oppure il server ha restituito una risposta non valida. Riprova tra qualche istante.",
+    "unavailable_title": "Il servizio è temporaneamente non disponibile",
+    "unavailable_message": "Il sito è sovraccarico o al momento non può elaborare la richiesta. Attendi un po’ e riprova."
   },
   "es": {
     "restart_title": "El servidor se está reiniciando",
@@ -221,7 +263,13 @@
     "language_label": "Idioma",
     "body_limit_title": "Solicitud demasiado grande",
     "body_limit_message": "Los archivos o el formulario superan el tamaño permitido por este sitio. El tamaño total máximo es de {limit}. Usa archivos más pequeños o envía menos archivos a la vez e inténtalo de nuevo.",
-    "input_limit_message": "Este formulario contiene demasiados campos, archivos o valores anidados. Envía menos elementos o simplifica el formulario e inténtalo de nuevo."
+    "input_limit_message": "Este formulario contiene demasiados campos, archivos o valores anidados. Envía menos elementos o simplifica el formulario e inténtalo de nuevo.",
+    "server_error_title": "Se ha producido un error",
+    "server_error_message": "El sitio no pudo completar tu solicitud debido a un error del servidor. Inténtalo de nuevo más tarde.",
+    "bad_gateway_title": "El sitio está temporalmente inaccesible",
+    "bad_gateway_message": "No se pudo contactar con el servidor del sitio o este devolvió una respuesta no válida. Inténtalo de nuevo en unos momentos.",
+    "unavailable_title": "El servicio no está disponible temporalmente",
+    "unavailable_message": "El sitio está ocupado o temporalmente no puede atender tu solicitud. Espera un poco e inténtalo de nuevo."
   },
   "pt": {
     "restart_title": "O servidor está a reiniciar",
@@ -249,7 +297,13 @@
     "language_label": "Idioma",
     "body_limit_title": "Pedido demasiado grande",
     "body_limit_message": "Os ficheiros ou o formulário excedem o tamanho permitido por este site. O tamanho total máximo é {limit}. Use ficheiros mais pequenos ou envie menos ficheiros de cada vez e tente novamente.",
-    "input_limit_message": "Este formulário contém demasiados campos, ficheiros ou valores aninhados. Envie menos elementos ou simplifique o formulário e tente novamente."
+    "input_limit_message": "Este formulário contém demasiados campos, ficheiros ou valores aninhados. Envie menos elementos ou simplifique o formulário e tente novamente.",
+    "server_error_title": "Ocorreu um erro",
+    "server_error_message": "O site não conseguiu concluir o seu pedido devido a um erro do servidor. Tente novamente mais tarde.",
+    "bad_gateway_title": "O site está temporariamente inacessível",
+    "bad_gateway_message": "Não foi possível contactar o servidor do site ou o servidor devolveu uma resposta inválida. Tente novamente dentro de momentos.",
+    "unavailable_title": "O serviço está temporariamente indisponível",
+    "unavailable_message": "O site está ocupado ou temporariamente não consegue processar o seu pedido. Aguarde um pouco e tente novamente."
   },
   "kk-KZ": {
     "restart_title": "Сервер қайта іске қосылуда",
@@ -277,7 +331,13 @@
     "language_label": "Тіл",
     "body_limit_title": "Сұрау көлемі тым үлкен",
     "body_limit_message": "Жүктелетін файлдардың немесе пішіннің көлемі осы сайт рұқсат еткен шектен асты. Ең үлкен жалпы көлем — {limit}. Кішірек файлдарды таңдаңыз немесе бір уақытта азырақ файл жіберіп, қайталап көріңіз.",
-    "input_limit_message": "Бұл пішінде өрістер, файлдар немесе ішкі мәндер тым көп. Азырақ элемент жіберіңіз немесе пішінді жеңілдетіп, қайталап көріңіз."
+    "input_limit_message": "Бұл пішінде өрістер, файлдар немесе ішкі мәндер тым көп. Азырақ элемент жіберіңіз немесе пішінді жеңілдетіп, қайталап көріңіз.",
+    "server_error_title": "Қате орын алды",
+    "server_error_message": "Сервер қатесіне байланысты сайт сұрауыңызды орындай алмады. Кейінірек қайталап көріңіз.",
+    "bad_gateway_title": "Сайт уақытша қолжетімсіз",
+    "bad_gateway_message": "Сайт серверіне қосылу мүмкін болмады немесе сервер жарамсыз жауап қайтарды. Біраз уақыттан кейін қайталап көріңіз.",
+    "unavailable_title": "Қызмет уақытша қолжетімсіз",
+    "unavailable_message": "Сайтқа жүктеме көп немесе ол сұрауыңызды уақытша өңдей алмайды. Біраз күтіп, қайталап көріңіз."
   },
   "ja": {
     "restart_title": "サーバーを再起動しています",
@@ -305,6 +365,12 @@
     "language_label": "言語",
     "body_limit_title": "リクエストのサイズが大きすぎます",
     "body_limit_message": "アップロードするファイルやフォームが、このサイトで許可されているサイズを超えています。合計サイズの上限は {limit} です。ファイルを小さくするか、一度に送信するファイル数を減らして、もう一度お試しください。",
-    "input_limit_message": "このフォームには、項目、ファイル、または入れ子になった値が多すぎます。送信する項目を減らすか、フォームを簡単にして、もう一度お試しください。"
+    "input_limit_message": "このフォームには、項目、ファイル、または入れ子になった値が多すぎます。送信する項目を減らすか、フォームを簡単にして、もう一度お試しください。",
+    "server_error_title": "エラーが発生しました",
+    "server_error_message": "サーバーのエラーにより、リクエストを処理できませんでした。しばらくしてから、もう一度お試しください。",
+    "bad_gateway_title": "一時的にサイトに接続できません",
+    "bad_gateway_message": "サイトのサーバーに接続できないか、サーバーから無効な応答が返されました。少し待ってから、もう一度お試しください。",
+    "unavailable_title": "サービスを一時的に利用できません",
+    "unavailable_message": "サイトが混み合っているか、一時的にリクエストを処理できません。少し待ってから、もう一度お試しください。"
   }
 }

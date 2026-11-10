@@ -70,8 +70,14 @@ func (s *Server) configureRoutes(engine *firewall.Engine, upstream *proxy.Handle
 		s.app.Use(monitor.Handler)
 	}
 	s.app.Use(s.stats.Middleware(firewall.CanonicalHostname))
+	s.app.Use(s.serverErrorPage)
 	s.app.Use(s.admissionHandler())
 	s.app.Use(engine.Handler)
+	upstream.SetStatusPages(map[int]fiber.Handler{
+		fiber.StatusInternalServerError: func(c fiber.Ctx) error { return s.serveServerError(c, fiber.StatusInternalServerError) },
+		fiber.StatusBadGateway:          func(c fiber.Ctx) error { return s.serveServerError(c, fiber.StatusBadGateway) },
+		fiber.StatusServiceUnavailable:  func(c fiber.Ctx) error { return s.serveServerError(c, fiber.StatusServiceUnavailable) },
+	})
 	s.app.Use(upstream.Handle)
 }
 

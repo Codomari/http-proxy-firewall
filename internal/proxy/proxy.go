@@ -22,19 +22,20 @@ import (
 )
 
 type Handler struct {
-	client     *fasthttp.HostClient
-	target     *url.URL
-	redirect   string
-	logger     *slog.Logger
-	timeout    time.Duration
-	slots      connectionSlots
-	mu         sync.Mutex
-	tunnels    map[net.Conn]struct{}
-	closed     atomic.Bool
-	retryTimes atomic.Int64
-	lastError  time.Time
-	routes     map[string]*Handler
-	handoffs   *upgradeHandoffs
+	client      *fasthttp.HostClient
+	target      *url.URL
+	redirect    string
+	logger      *slog.Logger
+	timeout     time.Duration
+	slots       connectionSlots
+	mu          sync.Mutex
+	tunnels     map[net.Conn]struct{}
+	closed      atomic.Bool
+	retryTimes  atomic.Int64
+	lastError   time.Time
+	routes      map[string]*Handler
+	handoffs    *upgradeHandoffs
+	statusPages map[int]fiber.Handler
 }
 
 func New(cfg config.Config, logger *slog.Logger) (*Handler, error) {
@@ -160,6 +161,15 @@ func (h *Handler) Handle(c fiber.Ctx) error {
 	if err := h.doRequest(request, response); err != nil {
 		fasthttp.ReleaseResponse(response)
 		return h.fail(c, err)
+	}
+	if page := h.statusPages[response.StatusCode()]; page != nil {
+		response.Header.CopyTo(&c.Response().Header)
+		stripResponseHopHeaders(&c.Response().Header)
+		// Discard the unread origin body without draining it or reusing its
+		// connection. The deferred release returns the admission slot.
+		response.Header.SetConnectionClose()
+		fasthttp.ReleaseResponse(response)
+		return page(c)
 	}
 	forwardResponse(c, response, release)
 	owned = false

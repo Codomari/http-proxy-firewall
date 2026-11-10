@@ -260,9 +260,10 @@ func TestMonitoringCountsAdmission503WhileAdminRemainsAvailable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	body, readErr := io.ReadAll(response.Body)
 	_ = response.Body.Close()
-	if response.StatusCode != http.StatusServiceUnavailable {
-		t.Fatalf("admission status = %d", response.StatusCode)
+	if readErr != nil || response.StatusCode != http.StatusServiceUnavailable || response.Header.Get("Retry-After") != "1" || !strings.Contains(string(body), `data-page="service-unavailable"`) {
+		t.Fatalf("admission status = %d, read = %v", response.StatusCode, readErr)
 	}
 	if totals, _ := readOverview(t, s); totals.Requests != 2 || totals.InFlight != 1 || totals.Errors5xx != 1 {
 		t.Fatalf("admission monitoring = %+v", totals)

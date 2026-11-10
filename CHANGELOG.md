@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.49 — 2026-11-10
+
+One user-facing feature since 0.3.48, following the project's patch-count convention.
+
+### Added
+
+- Show custom pages for upstream 500 Internal Server Error, 502 Bad Gateway and 503 Service Unavailable responses, matching the 409/413 design. Include plain-language explanations in all 11 supported languages, country-based language selection, a remembered language selector and authenticated TEST PAGES previews.
+
+### Changed
+
+- Use the same pages for firewall internal errors, upstream connection failures and local capacity rejections. Preserve HTTP status codes and `Retry-After`, prevent caching and replace headers describing the discarded origin body.
+- Discard upstream error bodies before streaming, including rejected upgrade requests. Close unread origin connections promptly, release upstream slots and record the replacement page in monitoring. Other upstream statuses keep their original responses.
+
+### Validation
+
+- Pass `make check`, covering unit and socket integration tests, race checks, `go vet`, the build and five installation checks. Cover HTTP/1 and HTTP/2, GET/HEAD/POST, hostname routes, rejected upgrades, stalled error bodies, connection release, monitoring counts, localization and authenticated previews.
+
 ## 0.3.48 — 2026-11-09
 
 Three user-facing features since 0.3.45, following the project's patch-count convention.

@@ -95,7 +95,8 @@ func TestAdminSaveChangesLiveRequestAndUpstreamLimits(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer blocked.Body.Close()
-	if blocked.StatusCode != 503 {
-		t.Fatal("running proxy bypassed saved overflow ceiling")
+	body, err := io.ReadAll(blocked.Body)
+	if err != nil || blocked.StatusCode != 503 || blocked.Header.Get("Retry-After") != "1" || !strings.Contains(string(body), `data-page="service-unavailable"`) {
+		t.Fatal("running proxy lost the overflow rejection page or retry guidance")
 	}
 }
