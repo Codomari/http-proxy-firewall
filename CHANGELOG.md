@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0 — 2026-11-11
+
+### Changed
+
+- Change the project license from MIT to GNU Affero General Public License, version 3 only (`AGPL-3.0-only`), starting with this release. Replace `LICENSE` with the official GNU AGPLv3 text and update the README's license links and notice. Preserve the project copyright attribution and third-party license notices.
+
+### Validation
+
+- Verify `LICENSE` against the official GNU license text and pass `make check`, including unit and socket integration tests, race checks, `go vet`, build and five installation checks.
+
 ## 0.3.52 — 2026-11-11
 
 Three user-facing features since 0.3.49, following the project's patch-count convention.

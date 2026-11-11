@@ -1,6 +1,6 @@
 # http-proxy-firewall
 
-Version **0.3.52** · [Changelog](CHANGELOG.md) · [MIT license](LICENSE)
+Version **0.4.0** · [Changelog](CHANGELOG.md) · [AGPL-3.0 license](LICENSE)
 
 A reverse proxy and Layer 7 firewall that sits in front of your web applications. It checks requests before forwarding them, adds a cookie checkpoint during traffic spikes, and provides an embedded admin dashboard.
 
@@ -568,4 +568,4 @@ Report suspected vulnerabilities privately to [anar.k.jafarov@gmail.com](mailto:
 
 ## License
 
-Copyright © 2026 Anar K. Jafarov (`num8er`). Distributed under the [MIT license](LICENSE). Third-party dependencies retain their respective licenses and notices.
+Copyright © 2026 Anar K. Jafarov (`num8er`). Distributed under the [GNU Affero General Public License, version 3 only](LICENSE) (`SPDX-License-Identifier: AGPL-3.0-only`). Third-party dependencies retain their respective licenses and notices.
