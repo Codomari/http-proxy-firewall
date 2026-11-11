@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"http-proxy-firewall/internal/ipfirewall"
 )
 
 // Load merges YAML defaults and overrides, then process environment and flags.
@@ -133,6 +135,8 @@ func (r *environment) applyFirewall(settings *Firewall) {
 	settings.WhitelistIPs = r.csv("IP_FILTER_WHITELIST")
 	settings.WhitelistNetworks = append(settings.WhitelistNetworks, r.csv("IP_FILTER_WHITELIST_NETWORKS")...)
 	settings.AllowedCountries = r.csv("IP_FILTER_ALLOWED_COUNTRIES")
+	settings.IPFirewallProviders = r.csv("PF_IP_FIREWALL_PROVIDERS")
+	settings.IPFirewallNetworks = r.csv("PF_IP_FIREWALL_NETWORKS")
 	settings.WhitelistCheckpoint = r.boolean("IP_FILTER_WHITELIST_CHECKPOINT", settings.WhitelistCheckpoint)
 	settings.CountryCheckpoint = r.boolean("IP_FILTER_COUNTRIES_CHECKPOINT", settings.CountryCheckpoint)
 	settings.TrustedProxies = r.csv("PF_TRUSTED_PROXIES")
@@ -186,6 +190,7 @@ func (r *environment) applyAdmin(settings *Admin) {
 	settings.CredentialsFile = r.text("PF_ADMIN_CREDS_FILE", "")
 	settings.Enabled = r.boolean("PF_ADMIN_ENABLED", settings.CredentialsFile != "")
 	settings.MaxHosts = r.integer("PF_ADMIN_MAX_HOSTS", settings.MaxHosts)
+	settings.CountersRedisKey = r.text("PF_MONITORING_REDIS_KEY", settings.CountersRedisKey)
 	if settings.CredentialsFile != "" {
 		accounts, err := readAdminCredentials(settings.CredentialsFile)
 		if err != nil {
@@ -244,6 +249,9 @@ func parseFlags(c Config, args []string, output io.Writer) (Config, error) {
 
 func (c Config) Validate() error {
 	var errs []error
+	if _, _, err := ipfirewall.NormalizeSettings(c.Firewall.IPFirewallProviders, c.Firewall.IPFirewallNetworks); err != nil {
+		errs = append(errs, err)
+	}
 	check := func(ok bool, message string) {
 		if !ok {
 			errs = append(errs, errors.New(message))
@@ -283,6 +291,7 @@ func (c Config) Validate() error {
 		users[account.User] = struct{}{}
 	}
 	check(c.Admin.MaxHosts > 0 && c.Admin.MaxHosts <= 1000000, "PF_ADMIN_MAX_HOSTS must be between 1 and 1000000")
+	check(len(c.Admin.CountersRedisKey) <= 900 && !strings.ContainsAny(c.Admin.CountersRedisKey, "\r\n\x00"), "PF_MONITORING_REDIS_KEY must be at most 900 bytes without control characters")
 	check(c.Firewall.RequestThreshold > 0, "request threshold must be positive")
 	check(c.Firewall.RejectionLogInterval >= 0, "rejection log interval cannot be negative")
 	check(c.HTTP.MaxConnections > 0 && c.HTTP.MaxConcurrentRequests > 0 && c.Proxy.MaxConnections > 0, "connection and concurrency limits must be positive")

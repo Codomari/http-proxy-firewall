@@ -250,7 +250,7 @@ func (h *Handler) serve(c fiber.Ctx, requestPath string) error {
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": "invalid host search"})
 		}
-		return c.JSON(fiber.Map{"timestamp": time.Now().UTC(), "totals": h.registry.Totals(), "runtime": h.registry.Runtime(), "hosts": list.Hosts, "host_count": list.Total, "services": h.serviceStatus(), "disks": h.registry.Disks(), "restart": h.restartStatus()})
+		return c.JSON(fiber.Map{"timestamp": time.Now().UTC(), "totals": h.registry.Totals(), "runtime": h.registry.Runtime(), "hosts": list.Hosts, "host_count": list.Total, "services": h.serviceStatus(), "disks": h.registry.Disks(), "restart": h.restartStatus(), "counter_persistence": h.registry.CounterPersistence()})
 	case h.basePath + "/api/logs":
 		result, err := h.logs.read(c.Query("cursor"))
 		if err != nil {

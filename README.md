@@ -1,6 +1,6 @@
 # http-proxy-firewall
 
-Version **0.3.49** · [Changelog](CHANGELOG.md) · [MIT license](LICENSE)
+Version **0.3.52** · [Changelog](CHANGELOG.md) · [MIT license](LICENSE)
 
 A reverse proxy and Layer 7 firewall that sits in front of your web applications. It checks requests before forwarding them, adds a cookie checkpoint during traffic spikes, and provides an embedded admin dashboard.
 
@@ -14,7 +14,11 @@ A reverse proxy and Layer 7 firewall that sits in front of your web applications
 
 ```mermaid
 flowchart TD
-    Client["Client request over HTTP or HTTPS"] --> Local{"Local endpoint?"}
+    Client["Client request over HTTP or HTTPS"] --> Whitelist{"Whitelisted IP, network or country?"}
+    Whitelist -->|Yes| Local{"Local endpoint?"}
+    Whitelist -->|No| IPBlock{"IP Firewall match?"}
+    IPBlock -->|Yes| Drop["444: empty response, close connection"]
+    IPBlock -->|No| Local
     Local -->|"Admin, ACME or enabled metrics"| LocalReply["Handle inside proxy-firewall"]
     Local -->|Application request| Capacity{"Request capacity available?"}
     Capacity -->|No| Busy["503: try again later"]
@@ -30,7 +34,7 @@ flowchart TD
     App --> Response["Forward response to the client"]
 ```
 
-Body validation runs before every application bypass, including static assets, whitelisted clients, verified Googlebot addresses and valid cookies. During a DDoS penalty, the whitelist checkpoint switches decide whether whitelisted clients also need a cookie.
+Whitelist matching runs first, followed by IP Firewall blocking. IP Firewall sends HTTP 444 with no body and closes matching connections before local routes, admission and application body inspection. HTTP/2 sends GOAWAY and closes after active streams finish. All permitted application requests receive body validation before static assets, whitelist, Googlebot or cookie bypasses. During a DDoS penalty, the whitelist checkpoint switches decide whether whitelisted clients also need a cookie.
 
 Accepted requests retain their original Host, escaped path, query and inspected body. Forwarding headers use the verified client IP. Responses stream from the upstream; HTTP/1.1 connections are reused.
 
@@ -208,13 +212,13 @@ Set `PF_ADMIN_ENABLED=false` to disable the interface explicitly. With no creden
 
 | Tab | What you can do |
 | --- | --- |
-| **Monitoring** | See traffic, CVE blocks, CPU/RAM, Redis/MaxMind status, disks and runtime information. |
+| **Monitoring** | See traffic, CVE/IP Firewall blocks, CPU/RAM, Redis/MaxMind status, disks and runtime information. |
 | **Logs** | Read and follow the service log. |
 | **Rules** | Edit general firewall settings and per-domain Cloudflare rules. |
 | **Debug** | Enable concurrent hostname/source captures and inspect requests and responses. |
 | **CERTBOT** | List certificates and request status, remove entries from **BLACKLIST**, and manually request a certificate. |
 | **TEST PAGES** | Open authenticated 500/502/503 server-error, 413 upload-size, restart, blocked-hostname and missing-TLS-hostname previews without changing server state. |
-| **Host Activity** | Search and sort per-host requests, rates, in-flight work, CVE blocks, errors and DDoS checkpoint state. |
+| **Host Activity** | Search and sort per-host requests, rates, in-flight work, CVE/IP Firewall blocks, errors and DDoS checkpoint state. |
 
 The dashboard is compiled into the binary, with no external fonts, CDN or frontend build step. All assets and APIs require authentication. The separate HEAD-only DNS test endpoint is public even when admin is disabled. Polling runs every five seconds and pauses when the browser tab is hidden; tab-specific views pause when you leave them.
 
@@ -232,13 +236,15 @@ Open **TEST PAGES** to inspect status pages in a new tab. With the default admin
 
 Open **Rules → General settings**, edit the fields, then press **Save general settings**.
 
-Parameter controls are grouped under **Request Limits**, **HTTP Connections**, **DDoS Protection**, **Upstream** and **Garbage Collection**. The whitelist lists remain at the top of the form.
+Parameter controls are grouped under **Whitelist**, **IP Firewall**, **Request Limits**, **HTTP Connections**, **DDoS Protection**, **Upstream** and **Garbage Collection**. IP Firewall sits directly below the whitelist.
 
 | Admin control | Saved `env` key | Shipped default |
 | --- | --- | --- |
 | Whitelisted IPs | `IP_FILTER_WHITELIST` | `127.0.0.1,::1` |
 | Whitelisted networks | `IP_FILTER_WHITELIST_NETWORKS` | Empty; loopback networks are always included. |
 | Whitelisted countries | `IP_FILTER_ALLOWED_COUNTRIES` | `Azerbaijan,Turkey` |
+| IP Firewall providers | `PF_IP_FIREWALL_PROVIDERS` | Empty; select providers before blocking |
+| IP Firewall blocked IPs and subnets | `PF_IP_FIREWALL_NETWORKS` | Empty; accepts IPv4, IPv6 and CIDRs |
 | Apply cookie checkpoint to whitelisted IPs and networks | `IP_FILTER_WHITELIST_CHECKPOINT` | `true` |
 | Apply cookie checkpoint to whitelisted countries | `IP_FILTER_COUNTRIES_CHECKPOINT` | `true` |
 | DDoS threshold in requests/second per hostname | `DOS_DETECTOR_HOSTNAME_REQUEST_THRESHOLD` | `200` |
@@ -255,6 +261,44 @@ Parameter controls are grouped under **Request Limits**, **HTTP Connections**, *
 | Maximum connections during a burst | `PF_UPSTREAM_MAX_OVERFLOW_CONNECTIONS` | `512` total, including normal connections |
 
 Enter IPs, CIDR networks and English country names using commas or newlines. Each whitelist accepts up to 512 entries. The DDoS threshold accepts integers from 1 to 1,000,000,000 and uses a ten-second sampling window.
+
+### Counter persistence
+
+Monitoring updates its counters in memory. When Redis is enabled with `PF_ENABLE_REDIS=true`, the app restores the last complete snapshot before accepting requests, saves every five seconds, and performs a final synchronous save after active requests drain during shutdown. Request handlers do not wait for Redis. If Redis is disabled, unreachable, missing a snapshot, or contains an invalid/incomplete snapshot, startup continues with zero counters. Later Redis failures leave live memory counters intact; subsequent saves retry automatically. A crash can lose changes since the last successful save.
+
+Snapshots include aggregate and per-host requests, 4xx rejections, CVE blocks, IP Firewall blocks, 5xx errors, untracked requests, per-host byte totals and last-seen timestamps. In-flight counts restart at zero. CPU, RAM, rates, uptime, goroutines, Go runtime/GC observations and Redis health/operation counters describe the current process and are not historical traffic counters.
+
+`PF_MONITORING_REDIS_KEY` defaults to `MONITORING:COUNTERS:v1`. Give each firewall sharing a Redis database a distinct stable key. Two reusable banks of bounded host chunks keep the previous complete snapshot readable until the new manifest is committed; incomplete saves never partially restore counters. Snapshot keys have no expiry. The current host-tracking capacity still applies on restore. Monitoring shows restore/save status and storage errors. Redis persistence requires no changes to the private credentials or override files beyond your usual configuration.
+
+### IP Firewall
+
+In **Rules → General settings → IP Firewall**, select the providers you want to block and add any individual IPs or CIDR subnets under **Blocked IPs and subnets**. Press **Save general settings** to apply immediately. Provider selection starts empty; custom entries are active when saved and accept up to 512 entries. Whitelisted IPs, networks and countries always take priority, regardless of their cookie-checkpoint switches. Loopback remains whitelisted. IP blocking also applies to admin, metrics and ACME HTTP routes, so add your management address to the whitelist before blocking its provider. Whitelist matches still receive the existing application body validation and checkpoint behavior.
+
+One goroutine starts with the app and fetches all provider lists, including providers that are not selected. It attempts each provider once every 24 hours. The private, atomic cache at `files/ip-firewall-networks.json` stores successful lists and attempt times, so restarting reuses recent lists without another download. A failed, empty, malformed or oversized replacement retains the previous valid list and waits until the next daily attempt. If a provider has no valid cached/downloaded list yet, that provider cannot block traffic; custom entries still work. The UI shows prefix counts, last successful update, next attempt and errors. Provider-list downloads never run in the request handler. Updates publish immutable snapshots and matching uses merged IPv4/IPv6 intervals.
+
+**Monitoring** shows **IP Firewall blocks**, and **Host Activity** adds a sortable counter per hostname. Each rejected request increments `ip_firewall_rejected`, total requests and the 4xx counter once; repeated requests from one IP count separately. IP Firewall responses use HTTP 444 with an empty body and do not count unread payload bytes. Counters still count globally when the hostname tracking limit is reached. With Redis enabled, cumulative counters are restored on startup; see [Counter persistence](#counter-persistence).
+
+| Provider / configuration ID | Network source and coverage |
+| --- | --- |
+| DigitalOcean / `digitalocean` | [Operator geofeed](https://www.digitalocean.com/geo/google.csv) |
+| OVH / `ovh` | RIPE RIS announcements for AS16276 |
+| Hetzner / `hetzner` | RIPE RIS announcements for AS24940, AS213230, AS212317 and AS215859 |
+| Scaleway / `scaleway` | RIPE RIS announcements for AS12876 |
+| Hostman / `hostman` | RIPE RIS announcements for AS214504 |
+| Linode / `linode` | [Operator geofeed](https://geoip.linode.com/) |
+| Azure / `azure` | `AzureCloud` from Microsoft's [public-cloud service tags](https://www.microsoft.com/en-us/download/details.aspx?id=56519); discovers the current dated JSON link daily |
+| AWS / `aws` | [Published IPv4 and IPv6 feed](https://ip-ranges.amazonaws.com/ip-ranges.json) |
+| GCP / `gcp` | [Google Cloud ranges](https://www.gstatic.com/ipranges/cloud.json), separate from the Googlebot feed; verified Googlebot addresses are excluded from this provider rule |
+| IONOS / `ionos` | RIPE RIS announcements for AS8560, AS51862 and AS54548 |
+| Meta / `meta` | RIPE RIS announcements for AS32934 and AS63293 |
+| OpenAI GPT Connectors / `openai_connectors` | [ChatGPT connectors](https://openai.com/chatgpt-connectors.json) |
+| OpenAI GPT Agents / `openai_agents` | [ChatGPT agents](https://openai.com/chatgpt-agents.json) |
+| Alibaba Cloud / `alibaba` | RIPE RIS announcements for AS45102 and AS37963 |
+| Cloudflare Workers / `cloudflare_workers` | [Cloudflare edge feeds](https://www.cloudflare.com/ips/) verify peers carrying `CF-Worker`; also recognizes the documented cross-zone Workers address `2a06:98c0:3600::103` |
+
+RIPE-based lists cover prefixes observed for the specified ASNs in the [announced-prefixes API](https://stat.ripe.net/docs/data-api/api-endpoints/announced-prefixes), whose default observation window is two weeks. They are not a complete ownership inventory of every provider subsidiary or customer network. Add missing IPs/subnets manually when needed.
+
+Cloudflare's shared edge ranges carry ordinary proxied visitors too. Selecting **Cloudflare Workers** blocks a `CF-Worker` request only when the socket peer belongs to the daily Cloudflare list, or when the verified client address is Cloudflare's cross-zone Workers identity. It does not block ordinary CDN visitors by edge IP alone. Configure the existing **Behind CloudFlare** hostname rule or trusted proxy settings to resolve `CF-Connecting-IP`. Intermediaries must preserve and sanitize forwarding headers. See [Cloudflare's Workers header behavior](https://developers.cloudflare.com/fundamentals/reference/http-headers/). Workers using raw TCP sockets have separate egress prefixes outside these published edge feeds and are outside this detection method; see [Cloudflare TCP sockets](https://developers.cloudflare.com/workers/runtime-apis/tcp-sockets/).
 
 The body-size control limits the complete request, including multipart boundaries, form fields and all files. One MiB is 1,048,576 bytes. Saving changes the limit for new requests immediately; an upload already being inspected keeps its original limit. The byte count must be positive and smaller than both the active and saved shared body buffer budgets. To exceed the active budget, increase **Shared body buffer budget (MiB)**, save and use **Restart app** before choosing a larger body limit. Requests beyond the body limit receive a designed **413 Request Entity Too Large** page showing the applied limit and how to reduce the upload. It uses the same 11-language selector as the 409 pages. Forms rejected for too many fields, files or nested values get an explanation specific to that limit. Upstream 413 responses retain their own bodies and status codes.
 
@@ -383,7 +427,7 @@ All paths below are relative to `/<PF_ADMIN_URI>`, which defaults to `/__pf/__ad
 
 Editing General settings pauses background replacement of unsaved form fields. Save errors are shown in the panel; if YAML was saved but runtime application failed, the API reports that a restart is required.
 
-The general-settings JSON also accepts `max_body_bytes`, `max_buffered_bytes`, `http2_enable` (boolean), `idle_request_timeout` (duration string), `gc_percent` (`-1` saves `GOGC=off`) and `gc_memory_limit` (for example `512MiB` or `off`). Older clients can omit these fields to preserve their saved values. Responses include `max_body_bytes_ceiling` (the current live body ceiling), `max_buffered_bytes_ceiling`, `active_max_buffered_bytes` and restart state; limits are validated before YAML or running settings change. `max_buffered_bytes`, `http2_enable` and `idle_request_timeout` are saved to their corresponding `PF_` keys and apply after restart.
+The general-settings JSON also accepts `ip_firewall_providers` (provider IDs), `ip_firewall_networks` (IPs/CIDRs) and `max_body_bytes`, `max_buffered_bytes`, `http2_enable` (boolean), `idle_request_timeout` (duration string), `gc_percent` (`-1` saves `GOGC=off`) and `gc_memory_limit` (for example `512MiB` or `off`). Older clients can omit these fields to preserve their saved values. Responses include `ip_firewall` (worker status, provider sources, counts, timestamps and errors), `max_body_bytes_ceiling` (the current live body ceiling), `max_buffered_bytes_ceiling`, `active_max_buffered_bytes` and restart state; limits are validated before YAML or running settings change. `max_buffered_bytes`, `http2_enable` and `idle_request_timeout` are saved to their corresponding `PF_` keys and apply after restart.
 
 </details>
 
@@ -487,6 +531,7 @@ internal/config/         YAML merging, typed settings, migration and validation
 internal/server/         HTTP/TLS listeners, admission and graceful shutdown
 internal/proxy/          Connection pools, forwarding, streams and upgrades
 internal/firewall/       Body inspection and ordered request decisions
+internal/ipfirewall/     Daily provider-network worker and immutable subnet matching
 internal/firewall/cves/  Independent CVE form checks
 internal/session/        Cookie challenge and validation
 internal/cache/          Bounded TTL/LRU storage

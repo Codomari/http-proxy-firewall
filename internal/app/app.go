@@ -14,6 +14,7 @@ import (
 	"http-proxy-firewall/internal/config"
 	"http-proxy-firewall/internal/firewall"
 	"http-proxy-firewall/internal/intelligence"
+	"http-proxy-firewall/internal/ipfirewall"
 	"http-proxy-firewall/internal/monitoring"
 	"http-proxy-firewall/internal/proxy"
 	"http-proxy-firewall/internal/server"
@@ -28,9 +29,10 @@ func New(cfg config.Config, options ...fx.Option) *fx.App {
 			newLogger,
 			storage.New,
 			intelligence.New,
+			newIPFirewall,
 			session.New,
 			newFirewall,
-			monitoring.New,
+			newMonitoring,
 			newAdmin,
 			proxy.New,
 			server.New),
@@ -60,17 +62,33 @@ func newLogger(cfg config.Config) *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 }
 
-func newFirewall(cfg config.Config, sources *intelligence.Service, sessions *session.Service, logger *slog.Logger) (*firewall.Engine, error) {
-	return firewall.New(cfg, sources, sessions, logger)
+func newIPFirewall(logger *slog.Logger) *ipfirewall.Service {
+	return ipfirewall.New("files/ip-firewall-networks.json", logger)
+}
+
+func newMonitoring(cfg config.Config, remote *storage.Remote, logger *slog.Logger) *monitoring.Registry {
+	stats := monitoring.New(cfg)
+	stats.ConfigurePersistence(remote, cfg.Redis.Enabled, cfg.Admin.CountersRedisKey, logger)
+	return stats
+}
+
+func newFirewall(cfg config.Config, sources *intelligence.Service, networks *ipfirewall.Service, sessions *session.Service, logger *slog.Logger) (*firewall.Engine, error) {
+	engine, err := firewall.New(cfg, sources, sessions, logger)
+	if err == nil {
+		engine.SetIPFirewall(networks)
+	}
+	return engine, err
 }
 
 func newAdmin(cfg config.Config, stats *monitoring.Registry, rules *firewall.Engine, logger *slog.Logger, remote *storage.Remote, sources *intelligence.Service) (*admin.Handler, error) {
 	return admin.New(cfg, stats, rules, logger, admin.ServiceSources{Redis: remote, MaxMind: sources})
 }
 
-func registerLifecycle(lifecycle fx.Lifecycle, remote *storage.Remote, sources *intelligence.Service, upstream *proxy.Handler, listener *server.Server, shutdown fx.Shutdowner, logger *slog.Logger) {
+func registerLifecycle(lifecycle fx.Lifecycle, remote *storage.Remote, stats *monitoring.Registry, sources *intelligence.Service, networks *ipfirewall.Service, upstream *proxy.Handler, listener *server.Server, shutdown fx.Shutdowner, logger *slog.Logger) {
 	lifecycle.Append(fx.Hook{OnStart: remote.Start, OnStop: remote.Stop})
+	lifecycle.Append(fx.Hook{OnStart: stats.Start, OnStop: stats.Stop})
 	lifecycle.Append(fx.Hook{OnStart: sources.Start, OnStop: sources.Stop})
+	lifecycle.Append(fx.Hook{OnStart: networks.Start, OnStop: networks.Stop})
 	lifecycle.Append(fx.Hook{OnStop: func(context.Context) error { return upstream.Close() }})
 	var stopWatching context.CancelFunc
 	lifecycle.Append(fx.Hook{

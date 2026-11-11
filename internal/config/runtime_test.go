@@ -94,6 +94,8 @@ func TestBodyDefaultsAndLiveSettingsDoNotRequireRestart(t *testing.T) {
 	next.Firewall.MaxBodyBytes = 100 << 20
 	next.Proxy.RequestRetryTimes++
 	next.HTTP.MaxConcurrentRequests++
+	next.Firewall.IPFirewallProviders = []string{"aws"}
+	next.Firewall.IPFirewallNetworks = []string{"198.51.100.0/24"}
 	if len(cfg.RestartChanges(next)) != 0 {
 		t.Fatal("live settings requested a restart")
 	}

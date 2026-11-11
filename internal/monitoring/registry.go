@@ -18,26 +18,28 @@ import (
 )
 
 type HostSnapshot struct {
-	Hostname    string    `json:"hostname"`
-	Requests    uint64    `json:"requests"`
-	InFlight    uint64    `json:"inflight"`
-	Rejected    uint64    `json:"rejected"`
-	CVERejected uint64    `json:"cve_rejected"`
-	Errors5xx   uint64    `json:"errors_5xx"`
-	BytesIn     uint64    `json:"bytes_in"`
-	BytesOut    uint64    `json:"bytes_out"`
-	LastSeen    time.Time `json:"last_seen"`
+	Hostname           string    `json:"hostname"`
+	Requests           uint64    `json:"requests"`
+	InFlight           uint64    `json:"inflight"`
+	Rejected           uint64    `json:"rejected"`
+	CVERejected        uint64    `json:"cve_rejected"`
+	IPFirewallRejected uint64    `json:"ip_firewall_rejected"`
+	Errors5xx          uint64    `json:"errors_5xx"`
+	BytesIn            uint64    `json:"bytes_in"`
+	BytesOut           uint64    `json:"bytes_out"`
+	LastSeen           time.Time `json:"last_seen"`
 }
 
 type TotalsSnapshot struct {
-	Requests          uint64 `json:"requests"`
-	InFlight          uint64 `json:"inflight"`
-	Rejected          uint64 `json:"rejected"`
-	CVERejected       uint64 `json:"cve_rejected"`
-	Errors5xx         uint64 `json:"errors_5xx"`
-	TrackedHosts      int    `json:"tracked_hosts"`
-	UntrackedRequests uint64 `json:"untracked_requests"`
-	Capacity          int    `json:"capacity"`
+	Requests           uint64 `json:"requests"`
+	InFlight           uint64 `json:"inflight"`
+	Rejected           uint64 `json:"rejected"`
+	CVERejected        uint64 `json:"cve_rejected"`
+	IPFirewallRejected uint64 `json:"ip_firewall_rejected"`
+	Errors5xx          uint64 `json:"errors_5xx"`
+	TrackedHosts       int    `json:"tracked_hosts"`
+	UntrackedRequests  uint64 `json:"untracked_requests"`
+	Capacity           int    `json:"capacity"`
 }
 
 type RuntimeSnapshot struct {
@@ -57,11 +59,12 @@ type RuntimeSnapshot struct {
 }
 
 type counters struct {
-	requests    atomic.Uint64
-	inflight    atomic.Uint64
-	rejected    atomic.Uint64
-	cveRejected atomic.Uint64
-	errors5xx   atomic.Uint64
+	requests           atomic.Uint64
+	inflight           atomic.Uint64
+	rejected           atomic.Uint64
+	cveRejected        atomic.Uint64
+	ipFirewallRejected atomic.Uint64
+	errors5xx          atomic.Uint64
 }
 
 type hostRecord struct {
@@ -73,15 +76,16 @@ type hostRecord struct {
 }
 
 type Registry struct {
-	enabled   bool
-	capacity  int
-	started   time.Time
-	mu        sync.RWMutex
-	hosts     map[string]*hostRecord
-	totals    counters
-	untracked atomic.Uint64
-	resources resourceSampler
-	disks     diskSampler
+	enabled     bool
+	capacity    int
+	started     time.Time
+	mu          sync.RWMutex
+	hosts       map[string]*hostRecord
+	totals      counters
+	untracked   atomic.Uint64
+	resources   resourceSampler
+	disks       diskSampler
+	persistence counterPersistence
 }
 
 func New(cfg config.Config) *Registry {
@@ -142,6 +146,33 @@ func (r *Registry) Middleware(normalize func(string) (string, error)) fiber.Hand
 	}
 }
 
+type ipFirewallRejectionKey struct{}
+
+// RecordIPFirewallRejection accounts for early 444 responses that never enter
+// request monitoring. Each increments requests, 4xx and IP Firewall rejections,
+// without counting payload bytes or leaving an in-flight request.
+func (r *Registry) RecordIPFirewallRejection(c fiber.Ctx, normalize func(string) (string, error)) {
+	if !r.enabled || c.Locals(ipFirewallRejectionKey{}) != nil {
+		return
+	}
+	c.Locals(ipFirewallRejectionKey{}, true)
+	r.totals.requests.Add(1)
+	r.totals.ipFirewallRejected.Add(1)
+	r.totals.rejected.Add(1)
+	if normalize != nil {
+		if name, err := normalize(string(c.Request().Header.Host())); err == nil && name != "" && len(name) <= 253 {
+			if host := r.findHost(name); host != nil {
+				host.requests.Add(1)
+				host.ipFirewallRejected.Add(1)
+				host.rejected.Add(1)
+				markSeen(host, time.Now())
+				return
+			}
+		}
+	}
+	r.untracked.Add(1)
+}
+
 func (r *Registry) findHost(name string) *hostRecord {
 	r.mu.RLock()
 	host := r.hosts[name]
@@ -175,7 +206,8 @@ func (r *Registry) Hosts() []HostSnapshot {
 		result = append(result, HostSnapshot{
 			Hostname: host.hostname, Requests: host.requests.Load(), InFlight: host.inflight.Load(),
 			Rejected: host.rejected.Load(), CVERejected: host.cveRejected.Load(), Errors5xx: host.errors5xx.Load(),
-			BytesIn: host.bytesIn.Load(), BytesOut: host.bytesOut.Load(), LastSeen: time.Unix(0, host.lastSeen.Load()).UTC(),
+			IPFirewallRejected: host.ipFirewallRejected.Load(),
+			BytesIn:            host.bytesIn.Load(), BytesOut: host.bytesOut.Load(), LastSeen: time.Unix(0, host.lastSeen.Load()).UTC(),
 		})
 	}
 	sort.Slice(result, func(i, j int) bool {
@@ -194,6 +226,7 @@ func (r *Registry) Totals() TotalsSnapshot {
 	return TotalsSnapshot{
 		Requests: r.totals.requests.Load(), InFlight: r.totals.inflight.Load(), Rejected: r.totals.rejected.Load(), Errors5xx: r.totals.errors5xx.Load(),
 		CVERejected: r.totals.cveRejected.Load(), TrackedHosts: tracked, UntrackedRequests: r.untracked.Load(), Capacity: r.capacity,
+		IPFirewallRejected: r.totals.ipFirewallRejected.Load(),
 	}
 }
 

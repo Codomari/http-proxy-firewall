@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"http-proxy-firewall/internal/firewall"
+
 	"github.com/valyala/fasthttp"
 	"golang.org/x/net/http2"
 )
@@ -95,6 +97,11 @@ func (s *Server) handleHTTP2(conn net.Conn, writer http.ResponseWriter, request 
 		}
 		writer.Header().Add(string(name), string(value))
 	})
+	if response.StatusCode() == firewall.StatusIPFirewallRejected && response.Header.ConnectionClose() {
+		// x/net/http2 consumes this internal signal without sending the forbidden
+		// header: it sends GOAWAY, completes the empty 444, then closes when idle.
+		writer.Header().Set("Connection", "close")
+	}
 	writer.WriteHeader(response.StatusCode())
 	stream := response.BodyStream()
 	if response.ImmediateHeaderFlush {

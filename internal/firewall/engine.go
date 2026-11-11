@@ -38,6 +38,8 @@ type Engine struct {
 	trustCloudflare bool
 	cloudflare      cloudflareSettings
 	intelligence    Intelligence
+	ipFirewall      ipFirewallSource
+	ipRejection     func(fiber.Ctx)
 	sessions        *session.Service
 	logger          *slog.Logger
 	rejectionLogs   rejectionSampler
@@ -120,8 +122,12 @@ func New(cfg config.Config, intelligence Intelligence, sessions *session.Service
 
 func (e *Engine) Handler(c fiber.Ctx) error {
 	address := e.clientAddress(c)
-	// Always keep body validation first, including static files, whitelisted
-	// clients, accepted cookies, and search engine ranges.
+	decision := e.ipDecision(c)
+	if decision.blocked {
+		return e.rejectIP(c)
+	}
+	// IP Firewall rejects first; every permitted request still receives body
+	// validation before static, whitelist, cookie, or search engine bypasses.
 	release, err := e.inspect(c)
 	if release != nil {
 		defer release()
@@ -139,7 +145,7 @@ func (e *Engine) Handler(c fiber.Ctx) error {
 	if err != nil {
 		return c.SendStatus(fiber.StatusBadRequest)
 	}
-	if isStatic(string(c.Request().URI().Path())) || e.bypass(c.Context(), address) {
+	if isStatic(string(c.Request().URI().Path())) || decision.bypass || !decision.matched && e.intelligence != nil && e.intelligence.IsGoogleBot(address) {
 		return c.Next()
 	}
 	if !e.detector.penalized(host, e.now()) {

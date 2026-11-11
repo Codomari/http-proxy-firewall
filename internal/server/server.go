@@ -88,6 +88,7 @@ func New(cfg config.Config, engine *firewall.Engine, upstream *proxy.Handler, lo
 	s.upstream = upstream
 	s.bodyLimit = engine.MaxBodyBytes
 	engine.SetBodyLimitPage(s.serveRequestTooLarge)
+	engine.SetIPFirewallRejectionHandler(func(c fiber.Ctx) { s.stats.RecordIPFirewallRejection(c, firewall.CanonicalHostname) })
 	s.admission.limit = cfg.HTTP.MaxConcurrentRequests
 	basePath, err := config.AdminPath(cfg.Admin.URI)
 	if err != nil {
@@ -108,7 +109,7 @@ func New(cfg config.Config, engine *firewall.Engine, upstream *proxy.Handler, lo
 	s.adminUI.SetCertificateService(s)
 	s.app = newFiberApp(cfg)
 	s.configureRoutes(engine, upstream)
-	s.configureHTTPServer(upstream)
+	s.configureHTTPServer(engine, upstream)
 	s.admin, err = newAdminServer(cfg.Observability.PprofAddress)
 	if err != nil {
 		return nil, err

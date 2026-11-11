@@ -101,6 +101,7 @@ func (c Config) RestartChanges(next Config) []string {
 	for _, firewall := range []*Firewall{&c.Firewall, &next.Firewall} {
 		firewall.MaxBodyBytes, firewall.RequestThreshold = 0, 0
 		firewall.WhitelistIPs, firewall.WhitelistNetworks, firewall.AllowedCountries = nil, nil, nil
+		firewall.IPFirewallProviders, firewall.IPFirewallNetworks = nil, nil
 		firewall.WhitelistCheckpoint, firewall.CountryCheckpoint = false, false
 	}
 	add("Firewall startup settings", c.Firewall, next.Firewall)

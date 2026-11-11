@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.3.52 — 2026-11-11
+
+Three user-facing features since 0.3.49, following the project's patch-count convention.
+
+### Added
+
+- Add IP Firewall directly below Whitelist in Rules. Select from 15 providers, including Cloudflare Workers, and enter individual IPv4/IPv6 addresses or CIDR subnets. Blocking is opt-in. A background goroutine refreshes all provider feeds once per day and caches valid networks and attempt times across restarts. Failed replacements retain the last valid list; matching uses immutable, merged network intervals.
+- Show IP Firewall rejection totals in Monitoring and a sortable per-host counter in Host Activity. Count each rejection once in total requests, 4xx responses and IP Firewall blocks, including requests outside the bounded hostname table. Show provider sources, prefix counts, update times and errors in Rules.
+- Persist aggregate and per-host traffic counters in Redis when enabled. Restore a complete snapshot before listeners start, otherwise begin at zero. Save every five seconds and synchronously after requests drain during shutdown. Use two bounded banks of host chunks and publish the manifest only after every write succeeds. Keep counters active in memory during Redis failures, expose persistence status in Monitoring, and support a distinct `PF_MONITORING_REDIS_KEY` per firewall. In-flight work and live process metrics restart normally.
+
+### Changed
+
+- Evaluate whitelist IPs, networks and countries before IP Firewall rules. Reject other matching clients with HTTP 444, an empty body and HTTP/1 connection closure; HTTP/2 sends GOAWAY and closes after active streams finish. Apply IP Firewall before local routes, restart/TLS status responses, admission and body inspection. Whitelisted application requests retain existing body validation and cookie-checkpoint settings.
+- Keep GCP ranges separate from Googlebot and exclude verified Googlebot addresses from GCP provider blocking. Identify Cloudflare HTTP Workers using the verified cross-zone identity or a Workers header from a published Cloudflare edge; ordinary CDN visitors are allowed. Raw TCP Workers egress is outside this coverage. Preserve newer IP Firewall settings when older admin API clients omit them.
+
+### Validation
+
+- Pass `make check`: unit and socket integration tests, race checks, `go vet`, build and five installation checks. Cover empty 444 responses, HTTP/1 closure, HTTP/2 GOAWAY, whitelist priority, provider refresh/cache recovery, counters, Redis startup fallback, partial snapshot writes and shutdown persistence.
+- Fetch and parse all 15 live provider sources. Verify all cumulative traffic counters against a disposable Redis instance across registry reconstruction. Check desktop/mobile layout, unsaved selections during polling, save/reload behavior, monitoring counters and a full application restart with Redis in a headless browser.
+
 ## 0.3.49 — 2026-11-10
 
 One user-facing feature since 0.3.48, following the project's patch-count convention.

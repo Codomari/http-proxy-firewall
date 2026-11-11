@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 	"unicode"
+
+	"http-proxy-firewall/internal/ipfirewall"
 )
 
 type GeneralRules struct {
@@ -22,6 +24,8 @@ type GeneralRules struct {
 	GCMemoryLimit             string   `json:"gc_memory_limit"`
 	WhitelistIPs              []string `json:"whitelist_ips"`
 	WhitelistNetworks         []string `json:"whitelist_networks"`
+	IPFirewallProviders       []string `json:"ip_firewall_providers"`
+	IPFirewallNetworks        []string `json:"ip_firewall_networks"`
 	AllowedCountries          []string `json:"allowed_countries"`
 	IPCheckpoint              bool     `json:"ip_checkpoint"`
 	CountryCheckpoint         bool     `json:"country_checkpoint"`
@@ -29,14 +33,19 @@ type GeneralRules struct {
 	UpstreamRequestRetryTimes int      `json:"upstream_request_retry_times"`
 }
 
-var generalRuleKeys = []string{"IP_FILTER_WHITELIST", "IP_FILTER_WHITELIST_NETWORKS", "IP_FILTER_ALLOWED_COUNTRIES", "IP_FILTER_WHITELIST_CHECKPOINT", "IP_FILTER_COUNTRIES_CHECKPOINT", "DOS_DETECTOR_HOSTNAME_REQUEST_THRESHOLD", "PF_UPSTREAM_REQUEST_RETRY_TIMES", "PF_MAX_CONCURRENT_REQUESTS", "PF_UPSTREAM_MAX_CONNECTIONS", "PF_UPSTREAM_ALLOW_OVERFLOW", "PF_UPSTREAM_MAX_OVERFLOW_CONNECTIONS", "CVE_MITIGATOR_MAX_BODY_BYTES", "GOGC", "GOMEMLIMIT", "PF_MAX_BUFFERED_BYTES", "PF_HTTP2_ENABLE", "PF_IDLE_REQUEST_TIMEOUT", "PF_IDLE_TIMEOUT"}
+var generalRuleKeys = []string{"IP_FILTER_WHITELIST", "IP_FILTER_WHITELIST_NETWORKS", "IP_FILTER_ALLOWED_COUNTRIES", "IP_FILTER_WHITELIST_CHECKPOINT", "IP_FILTER_COUNTRIES_CHECKPOINT", "DOS_DETECTOR_HOSTNAME_REQUEST_THRESHOLD", "PF_UPSTREAM_REQUEST_RETRY_TIMES", "PF_MAX_CONCURRENT_REQUESTS", "PF_UPSTREAM_MAX_CONNECTIONS", "PF_UPSTREAM_ALLOW_OVERFLOW", "PF_UPSTREAM_MAX_OVERFLOW_CONNECTIONS", "CVE_MITIGATOR_MAX_BODY_BYTES", "GOGC", "GOMEMLIMIT", "PF_MAX_BUFFERED_BYTES", "PF_HTTP2_ENABLE", "PF_IDLE_REQUEST_TIMEOUT", "PF_IDLE_TIMEOUT", "PF_IP_FIREWALL_PROVIDERS", "PF_IP_FIREWALL_NETWORKS"}
 
 func GeneralRulesFromFirewall(f Firewall) GeneralRules {
-	return GeneralRules{ConnectionLimits: ConnectionLimitsFromConfig(Defaults()), MaxBodyBytes: f.MaxBodyBytes, MaxBufferedBytes: f.MaxBufferedBytes, IdleRequestTimeout: Defaults().HTTP.IdleTimeout.String(), GCPercent: 100, GCMemoryLimit: "off", WhitelistIPs: f.WhitelistIPs, WhitelistNetworks: f.WhitelistNetworks, AllowedCountries: f.AllowedCountries, IPCheckpoint: f.WhitelistCheckpoint, CountryCheckpoint: f.CountryCheckpoint, DDoSThreshold: f.RequestThreshold}
+	return GeneralRules{ConnectionLimits: ConnectionLimitsFromConfig(Defaults()), MaxBodyBytes: f.MaxBodyBytes, MaxBufferedBytes: f.MaxBufferedBytes, IdleRequestTimeout: Defaults().HTTP.IdleTimeout.String(), GCPercent: 100, GCMemoryLimit: "off", WhitelistIPs: f.WhitelistIPs, WhitelistNetworks: f.WhitelistNetworks, IPFirewallProviders: f.IPFirewallProviders, IPFirewallNetworks: f.IPFirewallNetworks, AllowedCountries: f.AllowedCountries, IPCheckpoint: f.WhitelistCheckpoint, CountryCheckpoint: f.CountryCheckpoint, DDoSThreshold: f.RequestThreshold}
 }
 
 func (rules GeneralRules) Normalize() (GeneralRules, error) {
 	result := rules
+	var settingsErr error
+	result.IPFirewallProviders, result.IPFirewallNetworks, settingsErr = ipfirewall.NormalizeSettings(rules.IPFirewallProviders, rules.IPFirewallNetworks)
+	if settingsErr != nil {
+		return GeneralRules{}, settingsErr
+	}
 	if result.GCMemoryLimit == "" {
 		result.GCMemoryLimit = "off"
 	}
@@ -143,6 +152,8 @@ func generalRulesFromValues(values map[string]string) (GeneralRules, error) {
 		}
 	}
 	rules.GCPercent = runtimeSettings.GCPercent
+	rules.IPFirewallProviders = split(values["PF_IP_FIREWALL_PROVIDERS"])
+	rules.IPFirewallNetworks = split(values["PF_IP_FIREWALL_NETWORKS"])
 	rules.GCMemoryLimit = values["GOMEMLIMIT"]
 	rules.IdleRequestTimeout = values["PF_IDLE_REQUEST_TIMEOUT"]
 	if rules.IdleRequestTimeout == "" {
@@ -228,6 +239,8 @@ func (file *GeneralRulesFile) Save(rules GeneralRules) error {
 		"PF_IDLE_REQUEST_TIMEOUT":              rules.IdleRequestTimeout,
 		"GOGC":                                 gcPercentValue(rules.GCPercent),
 		"GOMEMLIMIT":                           rules.GCMemoryLimit,
+		"PF_IP_FIREWALL_PROVIDERS":             strings.Join(rules.IPFirewallProviders, ","),
+		"PF_IP_FIREWALL_NETWORKS":              strings.Join(rules.IPFirewallNetworks, ","),
 	})
 }
 

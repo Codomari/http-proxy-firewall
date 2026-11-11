@@ -7,12 +7,14 @@ import (
 	"strings"
 
 	"http-proxy-firewall/internal/config"
+	"http-proxy-firewall/internal/ipfirewall"
 )
 
 type generalRules struct {
 	settings  config.GeneralRules
 	whitelist []netip.Prefix
 	countries map[string]struct{}
+	blocked   *ipfirewall.Networks
 }
 
 func compileGeneralRules(settings config.GeneralRules) (*generalRules, error) {
@@ -30,7 +32,11 @@ func compileGeneralRules(settings config.GeneralRules) (*generalRules, error) {
 	for _, country := range settings.AllowedCountries {
 		countries[strings.ToLower(country)] = struct{}{}
 	}
-	return &generalRules{settings: settings, whitelist: whitelist, countries: countries}, nil
+	blocked, err := ipfirewall.Compile(settings.IPFirewallNetworks)
+	if err != nil {
+		return nil, err
+	}
+	return &generalRules{settings: settings, whitelist: whitelist, countries: countries, blocked: blocked}, nil
 }
 
 // SetGeneralRules publishes one immutable snapshot so requests never observe a
@@ -54,7 +60,10 @@ func (e *Engine) SetGeneralRules(settings config.GeneralRules) error {
 func (e *Engine) MaxBodyBytes() int64 { return e.general.Load().settings.MaxBodyBytes }
 
 func (e *Engine) whitelistBypass(ctx context.Context, address netip.Addr) (matched, bypass bool) {
-	rules := e.general.Load()
+	return e.whitelistWithRules(ctx, address, e.general.Load())
+}
+
+func (e *Engine) whitelistWithRules(ctx context.Context, address netip.Addr, rules *generalRules) (matched, bypass bool) {
 	if rules == nil {
 		return false, false
 	}

@@ -58,6 +58,8 @@ type Firewall struct {
 	MaxBufferedBytes      int64
 	WhitelistIPs          []string
 	WhitelistNetworks     []string
+	IPFirewallProviders   []string
+	IPFirewallNetworks    []string
 	AllowedCountries      []string
 	WhitelistCheckpoint   bool
 	CountryCheckpoint     bool
@@ -98,11 +100,12 @@ type Observability struct {
 }
 
 type Admin struct {
-	URI             string
-	CredentialsFile string
-	Enabled         bool
-	Accounts        []AdminAccount
-	MaxHosts        int
+	URI              string
+	CredentialsFile  string
+	Enabled          bool
+	Accounts         []AdminAccount
+	MaxHosts         int
+	CountersRedisKey string
 }
 
 type AdminAccount struct {

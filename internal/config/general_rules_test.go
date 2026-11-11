@@ -33,6 +33,8 @@ debug: []
 	}
 	file := GeneralRulesFile{Path: path}
 	settings := GeneralRules{MaxBodyBytes: Defaults().Firewall.MaxBodyBytes, MaxBufferedBytes: 512 << 20, GCPercent: 100, GCMemoryLimit: "off", ConnectionLimits: ConnectionLimitsFromConfig(Defaults()), WhitelistIPs: []string{"203.0.113.8", "::ffff:203.0.113.8", "2001:db8::8"}, WhitelistNetworks: []string{"203.0.113.9/24"}, AllowedCountries: []string{" Azerbaijan ", "Turkey", "turkey"}, IPCheckpoint: true, CountryCheckpoint: false, DDoSThreshold: 350}
+	settings.IPFirewallProviders = []string{"aws", "gcp"}
+	settings.IPFirewallNetworks = []string{"198.51.100.9", "2001:db8::9/32"}
 	if err := file.Save(settings); err != nil {
 		t.Fatal(err)
 	}

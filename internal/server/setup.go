@@ -46,6 +46,7 @@ func newFiberApp(cfg config.Config) *fiber.App {
 }
 
 func (s *Server) configureRoutes(engine *firewall.Engine, upstream *proxy.Handler) {
+	s.app.Use(engine.IPFirewallHandler)
 	s.app.Use(func(c fiber.Ctx) error {
 		if method, ok := c.RequestCtx().UserValue(originalMethodKey{}).(string); ok {
 			c.Request().Header.SetMethod(method)
@@ -124,7 +125,7 @@ func (s *Server) admissionHandler() fiber.Handler {
 	}
 }
 
-func (s *Server) configureHTTPServer(upstream *proxy.Handler) {
+func (s *Server) configureHTTPServer(engine *firewall.Engine, upstream *proxy.Handler) {
 	// Prepare routing synchronously, before either listener accepts traffic.
 	handler := s.app.Handler()
 	fast := s.app.Server()
@@ -138,6 +139,12 @@ func (s *Server) configureHTTPServer(upstream *proxy.Handler) {
 	}
 	fast.Handler = func(ctx *fasthttp.RequestCtx) {
 		s.rememberHostname(ctx.LocalAddr(), ctx.RemoteAddr(), string(ctx.Request.Header.Host()))
+		c := s.app.AcquireCtx(ctx)
+		rejected, _ := engine.RejectIPFirewall(c)
+		s.app.ReleaseCtx(c)
+		if rejected {
+			return
+		}
 		if state := ctx.TLSConnectionState(); state != nil && state.ServerName == "" {
 			c := s.app.AcquireCtx(ctx)
 			country := s.statusCountry(c)

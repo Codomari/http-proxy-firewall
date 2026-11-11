@@ -8,6 +8,7 @@ import (
 	"mime"
 
 	"http-proxy-firewall/internal/config"
+	"http-proxy-firewall/internal/ipfirewall"
 
 	"github.com/gofiber/fiber/v3"
 )
@@ -33,14 +34,15 @@ func (h *Handler) SetConnectionSettings(source connectionSettingsSource) { h.con
 
 type generalRulesSnapshot struct {
 	config.GeneralRules
-	MaxBodyBytesCeiling       int64           `json:"max_body_bytes_ceiling"`
-	MaxBufferedBytesCeiling   int64           `json:"max_buffered_bytes_ceiling"`
-	ActiveMaxBufferedBytes    int64           `json:"active_max_buffered_bytes"`
-	Restart                   restartSnapshot `json:"restart"`
-	Available                 bool            `json:"available"`
-	Overrides                 []string        `json:"overrides"`
-	UpstreamAvailable         bool            `json:"upstream_available"`
-	ConnectionLimitsAvailable bool            `json:"connection_limits_available"`
+	IPFirewall                ipfirewall.Status `json:"ip_firewall"`
+	MaxBodyBytesCeiling       int64             `json:"max_body_bytes_ceiling"`
+	MaxBufferedBytesCeiling   int64             `json:"max_buffered_bytes_ceiling"`
+	ActiveMaxBufferedBytes    int64             `json:"active_max_buffered_bytes"`
+	Restart                   restartSnapshot   `json:"restart"`
+	Available                 bool              `json:"available"`
+	Overrides                 []string          `json:"overrides"`
+	UpstreamAvailable         bool              `json:"upstream_available"`
+	ConnectionLimitsAvailable bool              `json:"connection_limits_available"`
 }
 
 func (h *Handler) generalRulesSnapshot() (generalRulesSnapshot, error) {
@@ -53,6 +55,11 @@ func (h *Handler) generalRulesSnapshot() (generalRulesSnapshot, error) {
 	result.MaxBufferedBytesCeiling = maxAdminByteCount
 	result.ActiveMaxBufferedBytes = h.startup.Firewall.MaxBufferedBytes
 	result.Restart = h.restartStatusLocked()
+	if source, ok := h.general.(interface{ IPFirewallStatus() ipfirewall.Status }); ok {
+		result.IPFirewall = source.IPFirewallStatus()
+	} else {
+		result.IPFirewall = ipfirewall.New("", nil).Status()
+	}
 	return result, nil
 }
 
@@ -85,23 +92,25 @@ func (h *Handler) serveGeneralRules(c fiber.Ctx) error {
 			return c.Status(413).JSON(fiber.Map{"error": "Unable to read settings within the 64 KiB limit"})
 		}
 		var input struct {
-			MaxBodyBytes                   *int64   `json:"max_body_bytes"`
-			MaxBufferedBytes               *int64   `json:"max_buffered_bytes"`
-			HTTP2Enable                    *bool    `json:"http2_enable"`
-			IdleRequestTimeout             *string  `json:"idle_request_timeout"`
-			GCPercent                      *int     `json:"gc_percent"`
-			GCMemoryLimit                  *string  `json:"gc_memory_limit"`
-			WhitelistIPs                   []string `json:"whitelist_ips"`
-			WhitelistNetworks              []string `json:"whitelist_networks"`
-			AllowedCountries               []string `json:"allowed_countries"`
-			IPCheckpoint                   *bool    `json:"ip_checkpoint"`
-			CountryCheckpoint              *bool    `json:"country_checkpoint"`
-			DDoSThreshold                  *uint64  `json:"ddos_threshold"`
-			UpstreamRequestRetryTimes      *int     `json:"upstream_request_retry_times"`
-			MaxConcurrentRequests          *int     `json:"max_concurrent_requests"`
-			UpstreamMaxConnections         *int     `json:"upstream_max_connections"`
-			UpstreamAllowOverflow          *bool    `json:"upstream_allow_overflow"`
-			UpstreamMaxOverflowConnections *int     `json:"upstream_max_overflow_connections"`
+			MaxBodyBytes                   *int64    `json:"max_body_bytes"`
+			MaxBufferedBytes               *int64    `json:"max_buffered_bytes"`
+			HTTP2Enable                    *bool     `json:"http2_enable"`
+			IdleRequestTimeout             *string   `json:"idle_request_timeout"`
+			GCPercent                      *int      `json:"gc_percent"`
+			GCMemoryLimit                  *string   `json:"gc_memory_limit"`
+			WhitelistIPs                   []string  `json:"whitelist_ips"`
+			WhitelistNetworks              []string  `json:"whitelist_networks"`
+			IPFirewallProviders            *[]string `json:"ip_firewall_providers"`
+			IPFirewallNetworks             *[]string `json:"ip_firewall_networks"`
+			AllowedCountries               []string  `json:"allowed_countries"`
+			IPCheckpoint                   *bool     `json:"ip_checkpoint"`
+			CountryCheckpoint              *bool     `json:"country_checkpoint"`
+			DDoSThreshold                  *uint64   `json:"ddos_threshold"`
+			UpstreamRequestRetryTimes      *int      `json:"upstream_request_retry_times"`
+			MaxConcurrentRequests          *int      `json:"max_concurrent_requests"`
+			UpstreamMaxConnections         *int      `json:"upstream_max_connections"`
+			UpstreamAllowOverflow          *bool     `json:"upstream_allow_overflow"`
+			UpstreamMaxOverflowConnections *int      `json:"upstream_max_overflow_connections"`
 		}
 		decoder := json.NewDecoder(bytes.NewReader(data))
 		decoder.DisallowUnknownFields()
@@ -130,6 +139,13 @@ func (h *Handler) serveGeneralRules(c fiber.Ctx) error {
 			}
 		}
 		gcPercent, gcMemoryLimit := previous.GCPercent, previous.GCMemoryLimit
+		providers, networks := previous.IPFirewallProviders, previous.IPFirewallNetworks
+		if input.IPFirewallProviders != nil {
+			providers = *input.IPFirewallProviders
+		}
+		if input.IPFirewallNetworks != nil {
+			networks = *input.IPFirewallNetworks
+		}
 		if input.GCPercent != nil {
 			gcPercent = *input.GCPercent
 		}
@@ -172,7 +188,7 @@ func (h *Handler) serveGeneralRules(c fiber.Ctx) error {
 			}
 			retries = *input.UpstreamRequestRetryTimes
 		}
-		rules, err := (config.GeneralRules{ConnectionLimits: limits, MaxBodyBytes: maxBodyBytes, MaxBufferedBytes: maxBufferedBytes, HTTP2Enable: http2Enable, IdleRequestTimeout: idleRequestTimeout, GCPercent: gcPercent, GCMemoryLimit: gcMemoryLimit, WhitelistIPs: input.WhitelistIPs, WhitelistNetworks: input.WhitelistNetworks, AllowedCountries: input.AllowedCountries, IPCheckpoint: *input.IPCheckpoint, CountryCheckpoint: *input.CountryCheckpoint, DDoSThreshold: *input.DDoSThreshold, UpstreamRequestRetryTimes: retries}).Normalize()
+		rules, err := (config.GeneralRules{ConnectionLimits: limits, MaxBodyBytes: maxBodyBytes, MaxBufferedBytes: maxBufferedBytes, HTTP2Enable: http2Enable, IdleRequestTimeout: idleRequestTimeout, GCPercent: gcPercent, GCMemoryLimit: gcMemoryLimit, WhitelistIPs: input.WhitelistIPs, WhitelistNetworks: input.WhitelistNetworks, IPFirewallProviders: providers, IPFirewallNetworks: networks, AllowedCountries: input.AllowedCountries, IPCheckpoint: *input.IPCheckpoint, CountryCheckpoint: *input.CountryCheckpoint, DDoSThreshold: *input.DDoSThreshold, UpstreamRequestRetryTimes: retries}).Normalize()
 		if err != nil {
 			return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 		}

@@ -146,12 +146,25 @@ func (r *Remote) Start(ctx context.Context) error {
 }
 
 func (r *Remote) Get(ctx context.Context, key string) ([]byte, bool, error) {
+	return r.get(ctx, key, false)
+}
+
+// Load reports unavailability as an error, distinguishing a missing snapshot
+// from an unreachable backend before publishing a replacement snapshot.
+func (r *Remote) Load(ctx context.Context, key string) ([]byte, bool, error) {
+	return r.get(ctx, key, true)
+}
+
+func (r *Remote) get(ctx context.Context, key string, strict bool) ([]byte, bool, error) {
 	if len(key) == 0 || len(key) > maxKeyBytes {
 		return nil, false, nil
 	}
 	r.mx.Lock()
 	if !r.started || r.stopped || !r.cfg.Enabled {
 		r.mx.Unlock()
+		if strict {
+			return nil, false, errors.New("Redis is unavailable")
+		}
 		return nil, false, nil
 	}
 	client, runCtx := r.client, r.runCtx
@@ -160,6 +173,9 @@ func (r *Remote) Get(ctx context.Context, key string) ([]byte, bool, error) {
 	defer r.wg.Done()
 	allowed, probing := r.begin()
 	if !allowed {
+		if strict {
+			return nil, false, errors.New("Redis is temporarily unavailable")
+		}
 		return nil, false, nil
 	}
 	if probing {
@@ -188,6 +204,52 @@ func (r *Remote) Get(ctx context.Context, key string) ([]byte, bool, error) {
 		return nil, false, errors.New("remote value exceeds size limit")
 	}
 	return value, true, nil
+}
+
+// Save writes a bounded durable value synchronously, without expiry. Snapshot
+// callers must know all chunks succeeded before publishing their manifest.
+// Request handlers continue using the existing asynchronous Set path.
+func (r *Remote) Save(ctx context.Context, key string, value []byte) error {
+	if len(key) == 0 || len(key) > maxKeyBytes || len(value) > maxValueBytes {
+		return errors.New("Redis snapshot entry exceeds size limits")
+	}
+	r.mx.Lock()
+	if !r.started || r.stopped || !r.cfg.Enabled {
+		r.mx.Unlock()
+		return errors.New("Redis is unavailable")
+	}
+	client, runCtx := r.client, r.runCtx
+	r.wg.Add(1)
+	r.mx.Unlock()
+	defer r.wg.Done()
+	retained := int64(len(key) + len(value))
+	if r.retained.Add(retained) > maxRetainedBytes {
+		r.retained.Add(-retained)
+		return errors.New("Redis persistence byte budget exhausted")
+	}
+	defer r.retained.Add(-retained)
+	allowed, probing := r.begin()
+	if !allowed {
+		return errors.New("Redis is temporarily unavailable")
+	}
+	if probing {
+		defer r.probe.Store(false)
+	}
+	operationCtx, cancel := context.WithTimeout(ctx, r.cfg.Timeout)
+	stop := context.AfterFunc(runCtx, cancel)
+	defer cancel()
+	defer stop()
+	r.writes.Add(1)
+	err := client.set(operationCtx, key, value, 0)
+	if err != nil {
+		r.writeErrors.Add(1)
+		if ctx.Err() == nil && runCtx.Err() == nil {
+			r.failed()
+		}
+		return err
+	}
+	r.succeeded()
+	return nil
 }
 
 // Set copies key and value before retaining them. Both entry count and total

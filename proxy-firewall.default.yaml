@@ -50,6 +50,12 @@ env:
     value: "true"
   - key: IP_FILTER_COUNTRIES_CHECKPOINT
     value: "true"
+  # IP Firewall: select providers before blocking. Custom IPs/CIDRs also block.
+  # Whitelist matches always take priority. Provider lists refresh once per day.
+  - key: PF_IP_FIREWALL_PROVIDERS
+    value: ""
+  - key: PF_IP_FIREWALL_NETWORKS
+    value: ""
   # Only configured proxy peers may supply forwarding headers.
   - key: PF_TRUSTED_PROXIES
     value: ""
@@ -131,6 +137,9 @@ env:
     value: "__pf/__admin"
   - key: PF_ADMIN_MAX_HOSTS
     value: "10000"
+  # Use a distinct stable key for each firewall sharing a Redis database.
+  - key: PF_MONITORING_REDIS_KEY
+    value: "MONITORING:COUNTERS:v1"
   # Optional override: PF_ADMIN_ENABLED=false disables the admin interface.
   - key: PF_SILENT
     value: "true"

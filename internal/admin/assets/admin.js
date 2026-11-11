@@ -76,6 +76,9 @@
     text("inflight", number.format(total.inflight));
     text("rejected", number.format(total.rejected));
     text("cve-rejected", number.format(total.cve_rejected));
+    text("ip-firewall-rejected", number.format(total.ip_firewall_rejected));
+    const counterStorage = data.counter_persistence;
+    text("counter-persistence-status", counterStorage?.enabled ? `Counters saved to Redis every 5 seconds · ${counterStorage.restored ? "restored at startup" : "started from zero"}${counterStorage.last_saved && !counterStorage.last_saved.startsWith("0001-") ? ` · last saved ${new Date(counterStorage.last_saved).toLocaleString()}` : ""}${counterStorage.error ? ` · ${counterStorage.error}` : ""}` : "Counters are held in memory · enable Redis to retain them across restarts");
     text("errors", number.format(total.errors_5xx));
     const previous = state.previousTotal;
     const requestRate = previous && now > previous.time && total.requests >= previous.requests ? (total.requests - previous.requests) * 1000 / (now - previous.time) : null;
@@ -137,6 +140,7 @@
       cell(row, number.format(host.inflight));
       cell(row, number.format(host.rejected));
       cell(row, number.format(host.cve_rejected));
+      cell(row, number.format(host.ip_firewall_rejected));
       cell(row, number.format(host.errors_5xx));
       const status = cell(row, ""), badge = document.createElement("span");
       badge.className = `ddos-badge${host.ddos ? " active" : ""}`;
@@ -147,7 +151,7 @@
     }
     if (!hosts.length) {
       const row = document.createElement("tr"), empty = cell(row, state.search ? "No hosts match your search." : "No host traffic recorded yet.");
-      empty.colSpan = 8; empty.className = "empty"; fragment.appendChild(row);
+      empty.colSpan = 9; empty.className = "empty"; fragment.appendChild(row);
     }
     body.replaceChildren(fragment);
   }
@@ -406,6 +410,32 @@
   }
   const generalRules = {busy: false, dirty: false, key: "", available: false, upstreamAvailable: false, connectionsAvailable: false, bodyLimitCeiling: 0, bufferLimitCeiling: 0, controller: null};
   const connectionInputIDs = ["max-concurrent-requests", "upstream-max-connections", "upstream-allow-overflow", "upstream-max-overflow-connections"];
+  function renderIPFirewall(data) {
+    const worker = data.ip_firewall, providers = worker.providers, container = byId("ip-firewall-providers");
+    text("ip-firewall-status", `Lists refresh once a day · ${worker.running ? "worker running" : "worker stopped"} · provider blocking is off until selected${worker.cache_error ? ` · ${worker.cache_error}` : ""}`);
+    for (const provider of providers) {
+      let box = byId(`ip-provider-${provider.id}`);
+      if (!box) {
+        const card = document.createElement("div"), label = document.createElement("label");
+        card.className = "provider-option"; label.className = "checkpoint-option";
+        box = document.createElement("input"); box.type = "checkbox"; box.id = `ip-provider-${provider.id}`; box.value = provider.id;
+        label.htmlFor = box.id; label.append(box, document.createTextNode(provider.name));
+        const status = document.createElement("p"), description = document.createElement("p"), sources = document.createElement("details"), summary = document.createElement("summary");
+        status.id = `${box.id}-status`; status.className = description.className = "detail"; description.textContent = provider.description;
+        box.setAttribute("aria-describedby", status.id); summary.textContent = "List sources"; sources.appendChild(summary);
+        for (const source of provider.sources) {
+          const line = document.createElement("p"), link = document.createElement("a");
+          link.href = source; link.target = "_blank"; link.rel = "noopener noreferrer"; link.textContent = source;
+          line.appendChild(link); sources.appendChild(line);
+        }
+        card.append(label, status, description, sources); container.appendChild(card);
+      }
+      box.disabled = generalRules.busy || !data.available;
+      const date = value => value && !value.startsWith("0001-") ? new Date(value).toLocaleString() : "";
+      const last = date(provider.last_success), next = date(provider.next_refresh);
+      text(`${box.id}-status`, `${number.format(provider.prefixes)} prefixes · ${last ? `updated ${last}` : "no list loaded yet"}${next ? ` · next ${next}` : " · awaiting first download"}${provider.error ? ` · ${provider.error}${last ? "; keeping last valid list" : ""}` : ""}`);
+    }
+  }
   function renderGeneralRules(data, saved = false) {
     renderRestart(data.restart);
     generalRules.available = data.available;
@@ -423,11 +453,14 @@
     for (const id of connectionInputIDs) byId(id).disabled = generalRules.busy || !data.connection_limits_available;
     byId("upstream-request-retry-times").disabled = generalRules.busy || !data.upstream_available;
     byId("general-rules-save").disabled = generalRules.busy || !data.available;
+    renderIPFirewall(data);
     const key = JSON.stringify(data);
     if ((!generalRules.dirty || saved) && key !== generalRules.key) {
       byId("whitelist-ips").value = data.whitelist_ips.join("\n");
       byId("whitelist-networks").value = data.whitelist_networks.join("\n");
       byId("allowed-countries").value = data.allowed_countries.join("\n");
+      byId("ip-firewall-networks").value = data.ip_firewall_networks.join("\n");
+      for (const box of byId("ip-firewall-providers").querySelectorAll("input")) box.checked = data.ip_firewall_providers.includes(box.value);
       byId("ip-checkpoint").checked = data.ip_checkpoint;
       byId("country-checkpoint").checked = data.country_checkpoint;
       byId("ddos-threshold").value = String(data.ddos_threshold);
@@ -477,6 +510,8 @@
     byId("general-rules-error").hidden = true;
     const list = id => byId(id).value.split(/[,\r\n]+/).map(value => value.trim()).filter(Boolean);
     const settings = {whitelist_ips: list("whitelist-ips"), whitelist_networks: list("whitelist-networks"), allowed_countries: list("allowed-countries"), ip_checkpoint: byId("ip-checkpoint").checked, country_checkpoint: byId("country-checkpoint").checked, ddos_threshold: Number(byId("ddos-threshold").value)};
+    settings.ip_firewall_providers = Array.from(byId("ip-firewall-providers").querySelectorAll("input:checked"), input => input.value);
+    settings.ip_firewall_networks = list("ip-firewall-networks");
     settings.max_body_bytes = Number(byId("max-body-mib").value) * 1024 * 1024;
     settings.max_buffered_bytes = Number(byId("max-buffered-mib").value) * 1024 * 1024;
     settings.http2_enable = byId("http2-enable").checked;

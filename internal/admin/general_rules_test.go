@@ -60,6 +60,8 @@ func TestGeneralRulesAPIAuthenticationValidationPersistenceAndRuntime(t *testing
 	settings.ConnectionLimits = config.ConnectionLimits{MaxConcurrentRequests: 8, UpstreamMaxConnections: 2, UpstreamAllowOverflow: true, UpstreamMaxOverflowConnections: 4}
 	settings.MaxBodyBytes, settings.MaxBufferedBytes, settings.GCPercent, settings.GCMemoryLimit = 128<<20, 512<<20, 50, "512MiB"
 	settings.HTTP2Enable, settings.IdleRequestTimeout = true, "5s"
+	settings.IPFirewallProviders = []string{"aws", "gcp", "cloudflare_workers"}
+	settings.IPFirewallNetworks = []string{"198.51.100.9", "2001:db8::/32"}
 	payload, _ := json.Marshal(settings)
 	call := func(method, body, site, media string, auth, csrf bool) (int, []byte) {
 		t.Helper()
@@ -127,6 +129,8 @@ func TestGeneralRulesAPIAuthenticationValidationPersistenceAndRuntime(t *testing
 		{"POST", strings.Replace(string(payload), `"upstream_max_overflow_connections":4`, `"upstream_max_overflow_connections":-1`, 1), "", "application/json", true, true, 400},
 		{"POST", strings.Replace(string(payload), `"upstream_allow_overflow":true`, `"upstream_allow_overflow":"yes"`, 1), "", "application/json", true, true, 400},
 		{"POST", strings.Replace(string(payload), "203.0.113.8", "bad-ip", 1), "", "application/json", true, true, 400},
+		{"POST", strings.Replace(string(payload), `"aws"`, `"unknown_provider"`, 1), "", "application/json", true, true, 400},
+		{"POST", strings.Replace(string(payload), `"198.51.100.9"`, `"198.51.100.9/33"`, 1), "", "application/json", true, true, 400},
 		{"POST", strings.Repeat("x", 65537), "", "application/json", true, true, 413},
 		{"DELETE", "", "", "", true, true, 405},
 	} {
@@ -149,6 +153,9 @@ func TestGeneralRulesAPIAuthenticationValidationPersistenceAndRuntime(t *testing
 	}
 	if loaded.MaxBufferedBytes != cfg.Firewall.MaxBufferedBytes || loaded.ActiveMaxBufferedBytes != cfg.Firewall.MaxBufferedBytes || loaded.MaxBufferedBytesCeiling != maxAdminByteCount {
 		t.Fatal("GET did not expose the default, active and maximum buffer budgets")
+	}
+	if len(loaded.IPFirewall.Providers) != 15 || len(loaded.IPFirewallProviders) != 0 || loaded.IPFirewall.RefreshSeconds != 86400 {
+		t.Fatal("GET did not expose opt-in providers and daily refresh status")
 	}
 	status, data = call("POST", string(payload), "same-origin", "application/json", true, true)
 	if status != 200 || json.Unmarshal(data, &loaded) != nil {
@@ -175,6 +182,8 @@ func TestGeneralRulesAPIAuthenticationValidationPersistenceAndRuntime(t *testing
 	for _, key := range []string{"max_body_bytes", "max_buffered_bytes", "http2_enable", "idle_request_timeout", "gc_percent", "gc_memory_limit", "upstream_request_retry_times", "max_concurrent_requests", "upstream_max_connections", "upstream_allow_overflow", "upstream_max_overflow_connections"} {
 		delete(legacy, key)
 	}
+	delete(legacy, "ip_firewall_providers")
+	delete(legacy, "ip_firewall_networks")
 	legacyData, _ := json.Marshal(legacy)
 	legacyPayload := string(legacyData)
 	status, _ = call("POST", legacyPayload, "same-origin", "application/json", true, true)
@@ -183,6 +192,9 @@ func TestGeneralRulesAPIAuthenticationValidationPersistenceAndRuntime(t *testing
 	}
 	if source.settings.HTTP2Enable != settings.HTTP2Enable || source.settings.IdleRequestTimeout != settings.IdleRequestTimeout {
 		t.Fatal("legacy save reset HTTP protocol or idle timeout settings")
+	}
+	if !reflect.DeepEqual(source.settings.IPFirewallProviders, settings.IPFirewallProviders) || !reflect.DeepEqual(source.settings.IPFirewallNetworks, settings.IPFirewallNetworks) {
+		t.Fatal("legacy save reset IP Firewall settings")
 	}
 	status, data = call("POST", strings.Replace(string(payload), `"upstream_request_retry_times":5`, `"upstream_request_retry_times":0`, 1), "same-origin", "application/json", true, true)
 	persisted, err = file.Read()

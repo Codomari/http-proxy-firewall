@@ -15,6 +15,7 @@ import (
 	"go.uber.org/fx"
 
 	"http-proxy-firewall/internal/config"
+	"http-proxy-firewall/internal/ipfirewall"
 	"http-proxy-firewall/internal/server"
 )
 
@@ -165,7 +166,8 @@ func startApplication(t *testing.T, upstream string, changes ...func(*config.Con
 		change(&cfg)
 	}
 	var listener *server.Server
-	application := New(cfg, fx.NopLogger, fx.Replace(slog.New(slog.NewTextHandler(io.Discard, nil))), fx.Populate(&listener))
+	networks := ipfirewall.New(t.TempDir()+"/networks.json", nil, ipfirewall.WithHTTPClient(&http.Client{Transport: offlineNetworkTransport{}}))
+	application := New(cfg, fx.NopLogger, fx.Replace(slog.New(slog.NewTextHandler(io.Discard, nil))), fx.Replace(networks), fx.Populate(&listener))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := application.Start(ctx); err != nil {
@@ -179,4 +181,10 @@ func startApplication(t *testing.T, upstream string, changes ...func(*config.Con
 		}
 	})
 	return "http://" + listener.HTTPAddress().String()
+}
+
+type offlineNetworkTransport struct{}
+
+func (offlineNetworkTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return &http.Response{StatusCode: 503, Body: io.NopCloser(strings.NewReader(""))}, nil
 }

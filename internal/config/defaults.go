@@ -39,6 +39,6 @@ func Defaults() Config {
 			RefreshInterval: 24 * time.Hour, HTTPTimeout: 30 * time.Second,
 		},
 		Observability: Observability{PprofAddress: "127.0.0.1:8068", Silent: true},
-		Admin:         Admin{URI: DefaultAdminURI, MaxHosts: 10000},
+		Admin:         Admin{URI: DefaultAdminURI, MaxHosts: 10000, CountersRedisKey: "MONITORING:COUNTERS:v1"},
 	}
 }
